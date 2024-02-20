@@ -1,0 +1,18 @@
+# Folders
+chars/
+src/deps
+
+# Files
+*.exe
+*.dll
+*.o
+.DS_Store
+*.7z
+*.zip
+*.hide
+*.S
+*.json
+Dockerfile
+*.mp3
+*.png
+build/**
