@@ -71,9 +71,20 @@ extern "C" {
 	#error "siliapp.h is not implemented for Unix"
 	#define SIAPP_PLATFORM_API_X11
 #elif defined(SI_SYSTEM_WINDOWS)
+	#define NOMINMAX            1
+	#define WIN32_LEAN_AND_MEAN 1
+	#define WIN32_MEAN_AND_LEAN 1
+	#define VC_EXTRALEAN        1
 	#include <windows.h>
 	#include <shlobj.h>
-	#define SIAPP_PLATFORM_API_WIN32
+	#include <shellapi.h>
+	#include <ole2.h>
+	#undef NOMINMAX
+	#undef WIN32_LEAN_AND_MEAN
+	#undef WIN32_MEAN_AND_LEAN
+	#undef VC_EXTRALEAN
+
+#define SIAPP_PLATFORM_API_WIN32
 #elif defined(SI_SYSTEM_OS_X)
 	#error "siliapp.h is not implemented for MacOS"
 	#define SIAPP_PLATFORM_API_COCOA
@@ -99,25 +110,25 @@ extern "C" {
 #endif
 
 typedef SI_ENUM(b32, siWindowArg) {
-	SI_WINDOW_CENTER          = SI_BIT(0),
-	SI_WINDOW_FULLSCREEN      = SI_BIT(1),
-	SI_WINDOW_BORDERLESS      = SI_BIT(2),
-	SI_WINDOW_RESIZABLE       = SI_BIT(3),
+	SI_WINDOW_CENTER               = SI_BIT(0),
+	SI_WINDOW_FULLSCREEN           = SI_BIT(1),
+	SI_WINDOW_BORDERLESS           = SI_BIT(2),
+	SI_WINDOW_RESIZABLE            = SI_BIT(3),
 
-	SI_WINDOW_MINIMIZED       = SI_BIT(4),
-	SI_WINDOW_MAXIMIZED       = SI_BIT(5),
-	SI_WINDOW_HIDDEN          = SI_BIT(6),
+	SI_WINDOW_MINIMIZED            = SI_BIT(4),
+	SI_WINDOW_MAXIMIZED            = SI_BIT(5),
+	SI_WINDOW_HIDDEN               = SI_BIT(6),
 
-	SI_WINDOW_RENDERING_CPU   = SI_BIT(7),
-	SI_WINDOW_RENDERING_OPENGL   = SI_BIT(8),
+	SI_WINDOW_RENDERING_CPU        = SI_BIT(7),
+	SI_WINDOW_RENDERING_OPENGL     = SI_BIT(8),
 
-	SI_WINDOW_SCALING = SI_BIT(9),
-	SI_WINDOW_OPTIMAL_SIZE = SI_BIT(10),
-	SI_WINDOW_KEEP_ASPECT_RATIO = SI_BIT(11),
+	SI_WINDOW_SCALING              = SI_BIT(9),
+	SI_WINDOW_OPTIMAL_SIZE         = SI_BIT(10),
+	SI_WINDOW_KEEP_ASPECT_RATIO    = SI_BIT(11),
 
-	SI_WINDOW_DEFAULT         = SI_WINDOW_CENTER | SI_WINDOW_RESIZABLE | SI_WINDOW_RENDERING_OPENGL,
-	SI_WINDOW_DESKTOP         = SI_WINDOW_FULLSCREEN | SI_WINDOW_BORDERLESS,
-	SI_WINDOW_RENDERING_BITS  = SI_WINDOW_RENDERING_CPU | SI_WINDOW_RENDERING_OPENGL
+	SI_WINDOW_DEFAULT              = SI_WINDOW_CENTER | SI_WINDOW_RESIZABLE | SI_WINDOW_RENDERING_OPENGL,
+	SI_WINDOW_DESKTOP              = SI_WINDOW_FULLSCREEN | SI_WINDOW_BORDERLESS,
+	SI_WINDOW_RENDERING_BITS       = SI_WINDOW_RENDERING_CPU | SI_WINDOW_RENDERING_OPENGL
 };
 
 typedef SI_ENUM(u8, siKeyType) {
@@ -143,7 +154,7 @@ typedef SI_ENUM(u8, siKeyType) {
 	/* Lock keys. */
 	SK_CAPS_LOCK, SK_SCROLL_LOCK, SK_NUM_LOCK,
 
-	/* TODO. */
+	/* Misc. */
 	SK_ESC, SK_MENU, SK_PAUSE, SK_ENTER, SK_RETURN = SK_ENTER, SK_BACKSPACE,
 	SK_TAB, SK_PAGE_UP, SK_PAGE_DOWN, SK_END, SK_HOME, SK_INSERT, SK_DELETE, SK_CLEAR,
 	SK_PLUS, SK_SUBTRACT, SK_MULTIPLY, SK_DIVIDE,
@@ -253,8 +264,8 @@ typedef SI_ENUM(u32, siEventTypeEnum) {
 };
 
 typedef struct {
-	b8 clicked : 1;
-	b8 pressed : 1;
+	b8 clicked  : 1;
+	b8 pressed  : 1;
 	b8 released : 1;
 } siKeyState;
 
@@ -262,31 +273,31 @@ typedef struct {
 typedef struct {
 	siEventType type;
 
-	char charBuffer[32]; // x11 - complete, win32 - N/A, cocoa - N/A
+	char charBuffer[32];
 	usize charBufferLen;
 
-	/* The _last_ clicked key this frame (any previous key is ignored). */
 	siKeyType curKey;
-	siKeyState keys[SK_COUNT]; // x11 - complete, win32 - N/A, cocoa N/A
+	siKeyState keys[SK_COUNT];
 
-	b32 focus; // x11 - complete, win32 - N/A, cocoa - N/A
-	b32 mouseInside; // x11 - complete, win32 - N/A, cocoa - N/A
+	b32 focus;
+	b32 mouseInside;
 
-	siPoint mouse; // x11 - complete, win32 - N/A, cocoa - N/A
+	siPoint mouse;
 	siVec2 mouseScaled;
-	siPoint mouseRoot; // x11 - complete, KINDA N/A, win32 - N/A, cocoa - N/A
+	siPoint mouseRoot;
 
 	siMouseButtonType curMouse;
-	siKeyState mouseButtons[SI_MOUSE_COUNT]; // x11 - complete, win32 - N/A, cocoa - N/A
+	siKeyState mouseButtons[SI_MOUSE_COUNT];
 
-	siMouseWheelType mouseWheel; // x11 - complete, win32 - N/A, cocoa - N/A
+	siMouseWheelType mouseWheel;
 
-	siPoint windowPos; // x11 - complete, win32 - N/A, cocoa - N/A
-	siArea windowSize; // x11 - complete, win32 - N/A, cocoa - N/A
+	siPoint windowPos;
+	siArea windowSize;
 	siArea windowSizeScaled;
 
-	f64 curTime; // N/A
+	f64 curTime;
 	f64 timeDelta;
+	
 	struct {
 		siKeyType keyCache[16];
 		usize keyCacheLen;
@@ -348,7 +359,7 @@ typedef struct {
 	siVec4 bgColor;
 	siVec2 curTexCoords;
 
-	siColor* gradient;
+	const siColor* gradient;
 	usize gradientLen;
 
 	siImage* curTex;
@@ -408,8 +419,8 @@ typedef struct {
 } siSearchFilterSpec;
 
 typedef SI_ENUM(i32, siSearchOptions) {
-	SI_SEARCH_FOLDERS_ONLY = SI_BIT(0),
-	SI_SEARCH_ALLOW_MULTIPLE = SI_BIT(1)
+	SI_SEARCH_FOLDERS_ONLY     = SI_BIT(0),
+	SI_SEARCH_ALLOW_MULTIPLE   = SI_BIT(1)
 };
 
 typedef struct {
@@ -536,6 +547,40 @@ typedef SI_ENUM(i32, siMessageBoxResult) {
 	SI_MESSAGE_BOX_RESULT_CONTINUE
 };
 
+
+typedef SI_ENUM(i32, siDropState) {
+	SI_DRAG_ENTER = 1,
+	SI_DRAG_OVER,
+	SI_DRAG_LEAVE,
+	SI_DRAG_DROP
+};
+
+typedef struct {
+	IDropTarget target;
+	IDataObject* pDataObj;
+	siWindow* win;
+	HWND subHwnd;
+
+	siDropState state;
+} siDropEvent;
+
+typedef struct {
+	/* Actual length of the path. */
+	usize len;
+	/* */
+	char path[256];
+} siDropEntry;
+
+typedef struct {
+	/* */
+	u32 len;
+	/* */
+	u32 curIndex;
+	/* */
+	STGMEDIUM stgm;
+} siDropHandle;
+
+
 /* Three points structure. */
 typedef struct { siPoint p1, p2, p3; } siTriangle;
 /* Three float points structure. */
@@ -609,6 +654,8 @@ b32 siapp_windowMouseKeyReleased(const siWindow* win, siMouseButtonType key);
 
 /* Returns a 'siWindowEvent' object from specified window. */
 const siWindowEvent* siapp_windowEventGet(const siWindow* win);
+/* */
+b32 siapp_windowEventPoll(const siWindow* win, siEventTypeEnum* out);
 
 /* Returns the current cursor type for the window. */
 siCursorType siapp_windowCursorGet(const siWindow* win);
@@ -624,6 +671,14 @@ void siapp_cursorFree(siCursorType cursor);
 void siapp_windowTextColorSet(siWindow* win, siColor color);
 /* Sets the color for when drawing images. */
 void siapp_windowImageColorSet(siWindow* win, siColor color);
+/* */
+void siapp_windowGradientSet(siWindow* win, const siColor gradient[], usize len);
+
+
+/* */
+void siapp_windowDragAreaMake(siWindow* win, siRect rect, siDropEvent* out);
+/* */
+void siapp_windowDragAreaEnd(siDropEvent event);
 
 
 /* Returns the current resolution of the screen. */
@@ -645,6 +700,13 @@ usize siapp_clipboardTextGet(char* outBuffer, usize capacity);
 b32 siapp_clipboardTextSet(cstring text);
 /* */
 usize siapp_clipboardTextLen(void);
+
+
+siDropHandle siapp_dropEventHandle(siDropEvent event);
+
+b32 siapp_dropEventPollEntry(siDropHandle* handle, siDropEntry* entry);
+
+void siapp_dropEventEnd(siDropEvent* event);
 
 
 /* Converts an OS keycode to 'siKeyType'.  */
@@ -753,10 +815,10 @@ void siapp_drawImage(siWindow* win, siRect rect, siImage img);
 /* Draws an image based on the specified 'siVec4'. */
 void siapp_drawImageF(siWindow* win, siVec4 rect, siImage img);
 
-/* Draws a triangle based on the specified points and color. 
+/* Draws a triangle based on the specified points and color.
  * NOTE: The points are drawn in a clockwise manner.*/
 void siapp_drawTriangle(siWindow* win, siTriangle triangle, siColor color);
-/* Draws a triangle based on the specified points and color. 
+/* Draws a triangle based on the specified points and color.
  * NOTE: The points are drawn in a clockwise manner.*/
 void siapp_drawTriangleF(siWindow* win, siTriangleF triangle, siColor color);
 /* Draws a right triangle based on its hypotenuse length and the top's starting angle. */
@@ -850,10 +912,55 @@ siMessageBoxResult siapp_messageBoxEx(const siWindow* win, cstring title, usize 
 #if defined(SIAPP_PLATFORM_API_WIN32)
 
 u32 SI_WINDOWS_NUM = 0;
+siByte __win32KBState[256];
+
 
 #define SI_LOWORD_XY(lw) ((i32)(i16)LOWORD(lw))
 #define SI_HIWORD_XY(lw) ((i32)(i16)HIWORD(lw))
 
+#define SIAPP_ERROR_CHECK(condition, function) \
+	if (SI_UNLIKELY(condition)) { \
+		siAllocator* tmp = si_allocatorMakeStack(256); \
+		i32 err = GetLastError(); \
+		siapp_messageBox( \
+				function " failed", \
+				si_cstrMakeFmt(tmp, "Error: %#X (%s)", err, siapp_osErrToStr(err)), \
+				SI_MESSAGE_BOX_OK, \
+				SI_MESSAGE_BOX_ICON_ERROR \
+				); \
+		return false; \
+	}
+
+#define SIAPP_ERROR_MSGBOX_GL(programID, title) \
+	do { \
+		GLint len; \
+		glGetProgramiv(programID, GL_INFO_LOG_LENGTH, &len); \
+		char* msg = (char*)malloc(len); \
+		glGetProgramInfoLog(programID, len, nil, msg); \
+		siapp_messageBox(title, msg, SI_MESSAGE_BOX_OK, SI_MESSAGE_BOX_ICON_ERROR); \
+		free(msg); \
+	} while (0)
+
+#define siapp__mouseButtonPress(e, type) \
+	do { \
+		siKeyState* state = &e->mouseButtons[type - 1]; \
+		state->clicked = true; \
+		state->pressed = true; \
+		state->released = false; \
+		\
+		SK_TO_INT(e->keys[SK__EVENT]) |= SI_BIT(6); \
+		e->curMouse = type; \
+	} while(0)
+#define siapp__mouseButtonRelease(e, type) \
+	do { \
+		siKeyState* state = &e->mouseButtons[type - 1]; \
+		state->clicked = false; \
+		state->pressed = false; \
+		state->released = true; \
+		\
+		SK_TO_INT(e->keys[SK__EVENT]) |= SI_BIT(6); \
+		e->curMouse = type; \
+	} while (0)
 
 F_TRAITS(intern)
 void siapp__resizeWindow(siWindow* win, i32 width, i32 height) {
@@ -900,316 +1007,105 @@ void siapp__resizeWindow(siWindow* win, i32 width, i32 height) {
 	}
 }
 
-F_TRAITS(inline)
-siKeyType siapp_osKeyToSili(i32 key) {
-	if (si_between(key, 'A', 'Z') || si_between(key, '0', '9')) {
-		return key;
-	}
+F_TRAITS(inline intern)
+u32 siapp__dropUpdatePress(IDropTarget* target, DWORD grfKeyState, POINTL pt,
+		siDropState state) {
+	siDropEvent* drop = (siDropEvent*)target;
+	drop->state = state;
 
-	switch (key) {
-		case VK_ESCAPE: return SK_ESC;
+	POINT mouse = (POINT){pt.x, pt.y};
+	ScreenToClient(drop->win->hwnd, (POINT*)&mouse);
 
-		case VK_LCONTROL: return SK_CTRL_L;
-		case VK_LSHIFT:   return SK_SHIFT_L;
-		case VK_LMENU:    return SK_ALT_L;
-		case VK_LWIN:     return SK_SYSTEM_L;
-
-		case VK_RCONTROL: return SK_CTRL_R;
-		case VK_RSHIFT:   return SK_SHIFT_R;
-		case VK_RMENU:    return SK_ALT_R;
-		case VK_RWIN:     return SK_SYSTEM_R;
-
-		case VK_CAPITAL: return SK_CAPS_LOCK;
-		case VK_SCROLL:  return SK_SCROLL_LOCK;
-		case VK_NUMLOCK: return SK_NUM_LOCK;
-
-		case VK_PAUSE:      return SK_PAUSE;
-		case VK_MENU:       return SK_MENU;
-		case VK_OEM_4:      return SK_BRACKET_L;
-		case VK_OEM_6:      return SK_BRACKET_R;
-		case VK_OEM_1:      return SK_SEMICOLON;
-		case VK_OEM_COMMA:  return SK_COMMA;
-		case VK_OEM_PERIOD: return SK_PERIOD;
-		case VK_OEM_7:      return SK_QUOTE;
-		case VK_OEM_2:      return SK_SLASH;
-		case VK_OEM_5:      return SK_BACKSLASH;
-		case VK_OEM_3:      return SK_GRAVE;
-		case VK_OEM_PLUS:   return SK_EQUALS;
-		case VK_OEM_MINUS:  return SK_MINUS;
-
-		case VK_SPACE:  return SK_SPACE;
-		case VK_RETURN: return SK_RETURN;
-		case VK_BACK:   return SK_BACKSPACE;
-		case VK_TAB:    return SK_TAB;
-
-		case VK_PRIOR:  return SK_PAGE_UP;
-		case VK_NEXT:   return SK_PAGE_DOWN;
-		case VK_END:    return SK_END;
-		case VK_HOME:   return SK_HOME;
-		case VK_INSERT: return SK_INSERT;
-		case VK_DELETE: return SK_DELETE;
-		case VK_CLEAR:  return SK_CLEAR;
-
-		case VK_ADD:      return SK_PLUS;
-		case VK_SUBTRACT: return SK_SUBTRACT;
-		case VK_MULTIPLY: return SK_MULTIPLY;
-		case VK_DIVIDE:   return SK_DIVIDE;
-
-		case VK_LEFT:  return SK_LEFT;
-		case VK_RIGHT: return SK_RIGHT;
-		case VK_UP:    return SK_UP;
-		case VK_DOWN:  return SK_DOWN;
-
-		case VK_NUMPAD0:   return SK_NUMPAD_0;
-		case VK_NUMPAD1:   return SK_NUMPAD_1;
-		case VK_NUMPAD2:   return SK_NUMPAD_2;
-		case VK_NUMPAD3:   return SK_NUMPAD_3;
-		case VK_NUMPAD4:   return SK_NUMPAD_4;
-		case VK_NUMPAD6:   return SK_NUMPAD_6;
-		case VK_NUMPAD7:   return SK_NUMPAD_7;
-		case VK_NUMPAD8:   return SK_NUMPAD_8;
-		case VK_NUMPAD9:   return SK_NUMPAD_9;
-		case VK_SEPARATOR: return SK_NUMPAD_ENTER;
-		case VK_DECIMAL:   return SK_NUMPAD_DOT;
-
-		case VK_F1:  return SK_F1;
-		case VK_F2:  return SK_F2;
-		case VK_F3:  return SK_F3;
-		case VK_F4:  return SK_F4;
-		case VK_F5:  return SK_F5;
-		case VK_F6:  return SK_F6;
-		case VK_F7:  return SK_F7;
-		case VK_F8:  return SK_F8;
-		case VK_F9:  return SK_F9;
-		case VK_F10: return SK_F10;
-		case VK_F11: return SK_F11;
-		case VK_F12: return SK_F12;
-		case VK_F13: return SK_F13;
-		case VK_F14: return SK_F14;
-		case VK_F15: return SK_F15;
-	}
-
-	return SK_UNKNOWN;
-}
-
-F_TRAITS(inline)
-cstring siapp_osErrToStr(i32 error) {
-	static char buf[128];
-
-	DWORD len = FormatMessageA(
-		FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-		nil, error, 0, buf, sizeof(buf), nil
+	siWindowEvent* e = &drop->win->e;
+	e->mouseRoot = SI_POINT(pt.x, pt.y);
+	e->mouseScaled = SI_VEC2(
+		(f32)mouse.x / drop->win->scaleFactor.x,
+		(f32)mouse.x / drop->win->scaleFactor.y
 	);
+	e->mouse = SI_POINT(e->mouseScaled.x, e->mouseScaled.y);
 
-	if (len == 0) {
-		// The error code did not exist in the system errors.
-		// Try getting message text from ntdsbmsg.
+	e->type.mouseMove = true;
+	e->type.mousePress = true;
 
-		siDllHandle handle = si_dllLoad("Ntdsbmsg.dll");
-
-		len = FormatMessage(
-			FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_IGNORE_INSERTS,
-			handle, error, 0, buf, sizeof(buf), nil
-		);
-
-		si_dllUnload(handle);
-	}
-	buf[len - 3] = '\0';
-
-	return buf;
-}
-
-
-siSiliStr siapp_usernameGet(void) {
-	static char buffer[sizeof(usize) + MAX_PATH + 1];
-	siAllocator tmp = si_allocatorMakeTmp(buffer, sizeof(buffer));
-
-	usize* len = si_mallocItem(&tmp, usize);
-	u16 resultWide[MAX_PATH + 1];
-
-	{
-		DWORD wideLen = sizeof(buffer);
-		b32 succeed = GetUserNameW(resultWide, &wideLen);
-		SI_STOPIF(!succeed, return nil);
-	}
-	siSiliStr str = (siSiliStr)si_utf16ToUtf8Str(&tmp, resultWide, len);
-
-	return str;
-}
-
-
-siSearchResult siapp_fileManagerOpen(siAllocator* alloc, siSearchConfig config) {
-	siAllocator* stack = si_allocatorMake(SI_KILO(4));
-	IFileOpenDialog* pfd;
-	IShellItemArray* items;
-
-
-	CoCreateInstance(&CLSID_FileOpenDialog, NULL, CLSCTX_ALL, &IID_IFileOpenDialog, (rawptr*)&pfd);
-
-	{
-		if (config.title != nil) {
-			siUtf16String utf16 = si_utf8ToUtf16Str(stack, config.title, nil);
-			pfd->lpVtbl->SetTitle(pfd, utf16);
-			si_allocatorReset(stack);
+	switch (grfKeyState & (MK_LBUTTON | MK_MBUTTON | MK_RBUTTON)) {
+		case MK_LBUTTON: {
+			siKeyState* key = &e->mouseButtons[SI_MOUSE_LEFT - 1];
+			key->clicked = false;
+			key->pressed = true;
+			key->released = false;
+			break;
 		}
-	}
-	{
-		FILEOPENDIALOGOPTIONS fos = FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST;
-		switch (config.options) {
-			case SI_SEARCH_ALLOW_MULTIPLE: {
-				fos |= FOS_ALLOWMULTISELECT;
-				break;
-			}
-			case SI_SEARCH_FOLDERS_ONLY: {
-				fos |= FOS_PICKFOLDERS;
-				break;
-			}
-			case SI_SEARCH_FOLDERS_ONLY | SI_SEARCH_ALLOW_MULTIPLE: {
-				fos |= FOS_PICKFOLDERS | FOS_ALLOWMULTISELECT;
-				break;
-			}
+		case MK_MBUTTON: {
+			siKeyState* key = &e->mouseButtons[SI_MOUSE_RIGHT - 1];
+			key->clicked = false;
+			key->pressed = true;
+			key->released = false;
+			break;
 		}
-		pfd->lpVtbl->SetOptions(pfd, fos);
-	}
-	{
-		if (config.defaultPath != nil) {
-			siUtf16String utf16 = si_utf8ToUtf16Str(stack, config.defaultPath, nil);
-			IShellItem* folder;
-			HRESULT res = SHCreateItemFromParsingName(
-				utf16, nil, &IID_IShellItem, (rawptr*)&folder
-			);
-
-			if (res == 0) {
-				pfd->lpVtbl->SetFolder(pfd, folder);
-				folder->lpVtbl->Release(folder);
-			}
-			si_allocatorReset(stack);
-		}
-	}
-	{
-		if (config.filetypes != nil) {
-			COMDLG_FILTERSPEC* tmp = si_mallocArray(stack, COMDLG_FILTERSPEC, config.filetypesLen);
-
-			for_range (i, 0, config.filetypesLen) {
-				siSearchFilterSpec spec = config.filetypes[i];
-
-				tmp[i].pszName = si_utf8ToUtf16Str(stack, spec.name, nil);
-				tmp[i].pszSpec = si_utf8ToUtf16Str(stack, spec.filetype, nil);
-			}
-
-			pfd->lpVtbl->SetFileTypes(pfd, config.filetypesLen, tmp);
-			si_allocatorReset(stack);
+		case MK_RBUTTON: {
+			siKeyState* key = &e->mouseButtons[SI_MOUSE_RIGHT - 1];
+			key->clicked = false;
+			key->pressed = true;
+			key->released = false;
+			break;
 		}
 	}
 
-	pfd->lpVtbl->Show(pfd, nil);
-	{
-		HRESULT err = pfd->lpVtbl->GetResults(pfd, &items);
-		SI_STOPIF(err != 0, return (siSearchResult){nil, 0});
+
+	switch (grfKeyState & (MK_CONTROL | MK_SHIFT)) {
+		case MK_CONTROL:
+		case MK_CONTROL | MK_SHIFT: {
+			return DROPEFFECT_COPY;
+		}
+		case MK_SHIFT: {
+			return DROPEFFECT_MOVE;
+		}
 	}
 
-	DWORD len;
-	items->lpVtbl->GetCount(items, &len);
-
-	siSearchResult res;
-	res.len = len;
-	res.items = si_mallocArray(alloc, siSiliStr, len);
-
-	stack->offset = 0;
-	for_range (i, 0, len) {
-		IShellItem* item;
-		LPWSTR widePath = nil;
-
-		items->lpVtbl->GetItemAt(items, i, &item);
-		item->lpVtbl->GetDisplayName(item, SIGDN_FILESYSPATH, &widePath);
-
-		usize* strLen = si_mallocItem(alloc, usize);
-		res.items[i] = (siSiliStr)si_utf16ToUtf8Str(alloc, widePath, strLen);
-	}
-
-	items->lpVtbl->Release(items);
-	pfd->lpVtbl->Release(pfd);
-
-	return res;
+	return DROPEFFECT_COPY;
 }
+F_TRAITS(inline intern)
+void siapp__dropUpdateRelease(IDropTarget* target, DWORD grfKeyState, POINTL pt,
+		siDropState state) {
+	siDropEvent* drop = (siDropEvent*)target;
+	drop->state = state;
 
+	POINT mouse = (POINT){pt.x, pt.y};
+	ScreenToClient(drop->win->hwnd, (POINT*)&mouse);
 
-F_TRAITS(inline)
-siSiliStr siapp_appDataPathMake(cstring folderName) {
-	return siapp_appDataPathMakeEx(folderName, si_cstrLen(folderName));
-}
-siSiliStr siapp_appDataPathMakeEx(cstring folderName, usize folderNameLen) {
-	static char buffer[sizeof(usize) + MAX_PATH + 1];
-	siAllocator tmp = si_allocatorMakeTmp(buffer, sizeof(buffer));
+	siWindowEvent* e = &drop->win->e;
+	e->mouseRoot = SI_POINT(pt.x, pt.y);
+	e->mouseScaled = SI_VEC2(
+		(f32)mouse.x / drop->win->scaleFactor.x,
+		(f32)mouse.x / drop->win->scaleFactor.y
+	);
+	e->mouse = SI_POINT(e->mouseScaled.x, e->mouseScaled.y);
+	e->type.mouseRelease = true;
 
-	siSiliStr str;
-	usize* len = si_mallocItem(&tmp, usize);
-	u16 resultWide[MAX_PATH + 1];
-
-	{
-		i32 res = SHGetFolderPathW(nil, CSIDL_LOCAL_APPDATA, nil, 0, resultWide);
-		SI_STOPIF(res != S_OK, return nil);
-		str = (siSiliStr)si_utf16ToUtf8Str(&tmp, resultWide, len);
+	switch (grfKeyState & (MK_LBUTTON | MK_MBUTTON | MK_RBUTTON)) {
+		case MK_LBUTTON: {
+			siKeyState* key = &e->mouseButtons[SI_MOUSE_LEFT - 1];
+			key->clicked = false;
+			key->pressed = false;
+			key->released = true;
+			break;
+		}
+		case MK_MBUTTON: {
+			siKeyState* key = &e->mouseButtons[SI_MOUSE_RIGHT - 1];
+			key->clicked = false;
+			key->pressed = false;
+			key->released = true;
+			break;
+		}
+		case MK_RBUTTON: {
+			siKeyState* key = &e->mouseButtons[SI_MOUSE_RIGHT - 1];
+			key->clicked = false;
+			key->pressed = false;
+			key->released = true;
+			break;
+		}
 	}
-	usize curLen = *len;
-
-	str[curLen] = SI_PATH_SEPARATOR;
-	memcpy(&str[curLen + 1], folderName, folderNameLen);
-	str[curLen + 1 + folderNameLen] = SI_PATH_SEPARATOR;
-
-	*len += 1 + folderNameLen + 1;
-
-	return str;
 }
-
-
-#define SIAPP_ERROR_CHECK(condition, function) \
-	if (SI_UNLIKELY(condition)) { \
-		siAllocator* tmp = si_allocatorMakeStack(256); \
-		i32 err = GetLastError(); \
-		siapp_messageBox( \
-			function " failed", \
-			si_cstrMakeFmt(tmp, "Error: %#X (%s)", err, siapp_osErrToStr(err)), \
-			SI_MESSAGE_BOX_OK, \
-			SI_MESSAGE_BOX_ICON_ERROR \
-		); \
-		return false; \
-	}
-
-#define SIAPP_ERROR_MSGBOX_GL(programID, title) \
-	do { \
-		GLint len; \
-		glGetProgramiv(programID, GL_INFO_LOG_LENGTH, &len); \
-		char* msg = (char*)malloc(len); \
-		glGetProgramInfoLog(programID, len, nil, msg); \
-		siapp_messageBox(title, msg, SI_MESSAGE_BOX_OK, SI_MESSAGE_BOX_ICON_ERROR); \
-		free(msg); \
-	} while (0)
-
-BYTE __win32KBState[256];
-
-
-#define siapp__mouseButtonPress(e, type) \
-	do { \
-		siKeyState* state = &e->mouseButtons[type - 1]; \
-		state->clicked = true; \
-		state->pressed = true; \
-		state->released = false; \
-		\
-		SK_TO_INT(e->keys[SK__EVENT]) |= SI_BIT(6); \
-		e->curMouse = type; \
-	} while(0)
-
-#define siapp__mouseButtonRelease(e, type) \
-	do { \
-		siKeyState* state = &e->mouseButtons[type - 1]; \
-		state->clicked = false; \
-		state->pressed = false; \
-		state->released = true; \
-		\
-		SK_TO_INT(e->keys[SK__EVENT]) |= SI_BIT(6); \
-		e->curMouse = type; \
-	} while (0)
 
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -1415,6 +1311,71 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 	return 0;
 }
+LRESULT CALLBACK WndProcDropFile(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam,
+		UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
+	siDropEvent* out = (siDropEvent*)dwRefData;
+
+	switch (uMsg) {
+		case WM_NCDESTROY: {
+			RevokeDragDrop(hwnd);
+			RemoveWindowSubclass(hwnd, &WndProcDropFile, uIdSubclass);
+			return 0;
+		}
+	}
+
+	WindowProc(out->win->hwnd, uMsg, wParam, lParam);
+	return DefSubclassProc(hwnd, uMsg, wParam, lParam);
+}
+
+#if 1 /* Drag 'n Drop functions. Can be ignored. */
+intern ULONG IDropTarget_AddRef(IDropTarget* target) { return 1; SI_UNUSED(target); }
+intern ULONG IDropTarget_Release(IDropTarget* target) { return 0; SI_UNUSED(target); }
+F_TRAITS(intern)
+HRESULT IDropTarget_QueryInterface(IDropTarget *target, REFIID riid, LPVOID* ppvObject) {
+	*ppvObject = target;
+	return S_OK;
+	SI_UNUSED(riid);
+}
+F_TRAITS(intern)
+HRESULT IDropTarget_DragEnter(IDropTarget* target, IDataObject* pDataObj, DWORD grfKeyState, POINTL pt, DWORD* pdwEffect) {
+	u32 effect = siapp__dropUpdatePress(target, grfKeyState, pt, SI_DRAG_ENTER);
+
+	siDropEvent* drop = (siDropEvent*)target;
+	drop->pDataObj = pDataObj;
+	*pdwEffect &= effect;
+
+	return S_OK;
+}
+F_TRAITS(intern)
+HRESULT IDropTarget_DragOver(IDropTarget* target, DWORD grfKeyState,
+		POINTL pt, DWORD* pdwEffect) {
+	siDropEvent* drop = (siDropEvent*)target;
+	SI_STOPIF(drop->state == SI_DRAG_ENTER, return S_OK);
+
+	u32 effect = siapp__dropUpdatePress(target, grfKeyState, pt, SI_DRAG_OVER);
+	*pdwEffect &= effect;
+	return S_OK;
+}
+F_TRAITS(intern)
+HRESULT IDropTarget_DragLeave(IDropTarget* target) {
+	siDropEvent* drop = (siDropEvent*)target;
+	drop->state = SI_DRAG_LEAVE;
+	return S_OK;
+}
+F_TRAITS(intern)
+HRESULT IDropTarget_Drop(IDropTarget* target, IDataObject* pDataObj,
+		DWORD grfKeyState, POINTL pt, DWORD* pdwEffect) {
+	siapp__dropUpdateRelease(target, grfKeyState, pt, SI_DRAG_DROP);
+
+	siDropEvent* drop = (siDropEvent*)target;
+	drop->pDataObj = pDataObj;
+	*pdwEffect = DROPEFFECT_NONE;
+
+	return S_OK;
+}
+#endif
+
+
 #endif
 
 #if 1
@@ -1864,6 +1825,23 @@ const siWindowEvent* siapp_windowEventGet(const siWindow* win) {
 	SI_ASSERT_NOT_NULL(win);
 	return &win->e;
 }
+F_TRAITS(inline)
+b32 siapp_windowEventPoll(const siWindow* win, siEventTypeEnum* out) {
+	SI_ASSERT_NOT_NULL(win);
+	SI_ASSERT_NOT_NULL(out);
+
+	u32 event = SI_CSTR_U16(&win->e.type);
+	u32 bit = *out;
+	b32 res = false;
+
+	while (res == false && bit <= SI_EVENT_COUNT) {
+		res = event & SI_BIT(bit);
+		bit += 1;
+	}
+	*out = bit;
+
+	return bit != 0 && bit <= SI_EVENT_COUNT;
+}
 
 
 F_TRAITS(inline)
@@ -1986,6 +1964,58 @@ void siapp_windowImageColorSet(siWindow* win, siColor color) {
 		color.a / 255.0f
 	);
 }
+F_TRAITS(inline)
+void siapp_windowGradientSet(siWindow* win, const siColor gradient[], usize len) {
+	SI_ASSERT_NOT_NULL(win);
+	SI_ASSERT_NOT_NULL(gradient);
+
+	siWinRenderingCtxOpenGL* gl = &win->render.opengl; // NOTE(EimaMei): Check if CPU rendering is able to do decent gradients.
+	gl->gradient = gradient;
+	gl->gradientLen = len;
+}
+
+void siapp_windowDragAreaMake(siWindow* win, siRect rect, siDropEvent* out) {
+	SI_ASSERT_NOT_NULL(win);
+	SI_ASSERT_NOT_NULL(out);
+
+	u16 buf[64];
+	GetClassNameW(win->hwnd, buf, countof(buf));
+
+	HWND subHwnd = CreateWindowW(
+			buf,
+			L"", WS_VISIBLE | WS_CHILD,
+			rect.x, rect.y, rect.width, rect.height,
+			win->hwnd, 0, nil, nil
+			);
+	SI_ASSERT_NOT_NULL(subHwnd);
+
+	SetWindowSubclass(subHwnd, &WndProcDropFile, 0, (DWORD_PTR)out);
+
+	/* NOTE(EimaMei): Jei kada nors sutiksiu būtent tą daną, kuris sukurė šį
+	 * košmarą, jisai gaus į snukį už savo nusikaltimus žmonijai, sąmoningumui
+	 * ir protui. Tebūnie tos kalbos mirtis artėjančiais metais. */
+	static IDropTargetVtbl vTable = {
+		IDropTarget_QueryInterface,
+		IDropTarget_AddRef,
+		IDropTarget_Release,
+		IDropTarget_DragEnter,
+		IDropTarget_DragOver,
+		IDropTarget_DragLeave,
+		IDropTarget_Drop
+	};
+	out->win = win;
+	out->subHwnd = subHwnd;
+	out->state = 0;
+	out->target.lpVtbl = (IDropTargetVtbl*)&vTable;
+
+	OleInitialize(nil);
+	RegisterDragDrop(subHwnd, (LPDROPTARGET)&out->target);
+}
+void siapp_windowDragAreaEnd(siDropEvent event) {
+	RevokeDragDrop(event.subHwnd);
+	RemoveWindowSubclass(event.subHwnd, &WndProcDropFile, 0);
+	OleUninitialize();
+}
 
 
 F_TRAITS(inline)
@@ -2062,6 +2092,305 @@ usize siapp_clipboardTextLen(void) {
 	CloseClipboard();
 
 	return len;
+}
+
+
+siDropHandle siapp_dropEventHandle(siDropEvent event) {
+	FORMATETC fmte = {CF_HDROP, nil, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
+	STGMEDIUM stgm;
+	IDataObject* pDataObj = event.pDataObj;
+
+	siDropHandle res = {0};
+
+	b32 err = pDataObj->lpVtbl->GetData(pDataObj, &fmte, &stgm) == S_OK;
+	SI_STOPIF(!err, goto end);
+
+	HDROP hdrop = (HDROP)stgm.hGlobal;
+	res.stgm = stgm;
+	res.len = DragQueryFileW(hdrop, 0xFFFFFFFF, NULL, 0);
+
+end:
+	return res;
+}
+b32 siapp_dropEventPollEntry(siDropHandle* handle, siDropEntry* entry) {
+	if (handle->curIndex >= handle->len) {
+		ReleaseStgMedium(&handle->stgm);
+		return false;
+	}
+
+	siAllocator out = si_allocatorMakeTmp(entry->path, 256);
+	siAllocator* stack = si_allocatorMakeStack(SI_KILO(1));
+	u16* curPtr = (u16*)si_allocatorCurPtr(stack);
+
+	DragQueryFileW(handle->stgm.hGlobal, handle->curIndex, curPtr, 256);
+	si_utf16ToUtf8Str(&out, curPtr, &entry->len);
+	handle->curIndex += 1;
+
+	return true;
+}
+F_TRAITS(inline)
+void siapp_dropEventEnd(siDropEvent* event) {
+	event->state = 0;
+}
+
+
+F_TRAITS(inline)
+siKeyType siapp_osKeyToSili(i32 key) {
+	if (si_between(key, 'A', 'Z') || si_between(key, '0', '9')) {
+		return key;
+	}
+
+	switch (key) {
+		case VK_ESCAPE: return SK_ESC;
+
+		case VK_LCONTROL: return SK_CTRL_L;
+		case VK_LSHIFT:   return SK_SHIFT_L;
+		case VK_LMENU:    return SK_ALT_L;
+		case VK_LWIN:     return SK_SYSTEM_L;
+
+		case VK_RCONTROL: return SK_CTRL_R;
+		case VK_RSHIFT:   return SK_SHIFT_R;
+		case VK_RMENU:    return SK_ALT_R;
+		case VK_RWIN:     return SK_SYSTEM_R;
+
+		case VK_CAPITAL: return SK_CAPS_LOCK;
+		case VK_SCROLL:  return SK_SCROLL_LOCK;
+		case VK_NUMLOCK: return SK_NUM_LOCK;
+
+		case VK_PAUSE:      return SK_PAUSE;
+		case VK_MENU:       return SK_MENU;
+		case VK_OEM_4:      return SK_BRACKET_L;
+		case VK_OEM_6:      return SK_BRACKET_R;
+		case VK_OEM_1:      return SK_SEMICOLON;
+		case VK_OEM_COMMA:  return SK_COMMA;
+		case VK_OEM_PERIOD: return SK_PERIOD;
+		case VK_OEM_7:      return SK_QUOTE;
+		case VK_OEM_2:      return SK_SLASH;
+		case VK_OEM_5:      return SK_BACKSLASH;
+		case VK_OEM_3:      return SK_GRAVE;
+		case VK_OEM_PLUS:   return SK_EQUALS;
+		case VK_OEM_MINUS:  return SK_MINUS;
+
+		case VK_SPACE:  return SK_SPACE;
+		case VK_RETURN: return SK_RETURN;
+		case VK_BACK:   return SK_BACKSPACE;
+		case VK_TAB:    return SK_TAB;
+
+		case VK_PRIOR:  return SK_PAGE_UP;
+		case VK_NEXT:   return SK_PAGE_DOWN;
+		case VK_END:    return SK_END;
+		case VK_HOME:   return SK_HOME;
+		case VK_INSERT: return SK_INSERT;
+		case VK_DELETE: return SK_DELETE;
+		case VK_CLEAR:  return SK_CLEAR;
+
+		case VK_ADD:      return SK_PLUS;
+		case VK_SUBTRACT: return SK_SUBTRACT;
+		case VK_MULTIPLY: return SK_MULTIPLY;
+		case VK_DIVIDE:   return SK_DIVIDE;
+
+		case VK_LEFT:  return SK_LEFT;
+		case VK_RIGHT: return SK_RIGHT;
+		case VK_UP:    return SK_UP;
+		case VK_DOWN:  return SK_DOWN;
+
+		case VK_NUMPAD0:   return SK_NUMPAD_0;
+		case VK_NUMPAD1:   return SK_NUMPAD_1;
+		case VK_NUMPAD2:   return SK_NUMPAD_2;
+		case VK_NUMPAD3:   return SK_NUMPAD_3;
+		case VK_NUMPAD4:   return SK_NUMPAD_4;
+		case VK_NUMPAD6:   return SK_NUMPAD_6;
+		case VK_NUMPAD7:   return SK_NUMPAD_7;
+		case VK_NUMPAD8:   return SK_NUMPAD_8;
+		case VK_NUMPAD9:   return SK_NUMPAD_9;
+		case VK_SEPARATOR: return SK_NUMPAD_ENTER;
+		case VK_DECIMAL:   return SK_NUMPAD_DOT;
+
+		case VK_F1:  return SK_F1;
+		case VK_F2:  return SK_F2;
+		case VK_F3:  return SK_F3;
+		case VK_F4:  return SK_F4;
+		case VK_F5:  return SK_F5;
+		case VK_F6:  return SK_F6;
+		case VK_F7:  return SK_F7;
+		case VK_F8:  return SK_F8;
+		case VK_F9:  return SK_F9;
+		case VK_F10: return SK_F10;
+		case VK_F11: return SK_F11;
+		case VK_F12: return SK_F12;
+		case VK_F13: return SK_F13;
+		case VK_F14: return SK_F14;
+		case VK_F15: return SK_F15;
+	}
+
+	return SK_UNKNOWN;
+}
+
+F_TRAITS(inline)
+cstring siapp_osErrToStr(i32 error) {
+	static char buf[128];
+
+	DWORD len = FormatMessageA(
+		FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+		nil, error, 0, buf, sizeof(buf), nil
+	);
+
+	if (len == 0) {
+		siDllHandle handle = si_dllLoad("Ntdsbmsg.dll");
+
+		len = FormatMessageA(
+			FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_IGNORE_INSERTS,
+			handle, error, 0, buf, sizeof(buf), nil
+		);
+
+		si_dllUnload(handle);
+	}
+	buf[len] = '\0';
+
+	return buf;
+}
+
+
+siSiliStr siapp_usernameGet(void) {
+	static char buffer[sizeof(usize) + MAX_PATH + 1];
+	siAllocator tmp = si_allocatorMakeTmp(buffer, sizeof(buffer));
+
+	usize* len = si_mallocItem(&tmp, usize);
+	u16 resultWide[MAX_PATH + 1];
+
+	{
+		DWORD wideLen = sizeof(buffer);
+		b32 succeed = GetUserNameW(resultWide, &wideLen);
+		SI_STOPIF(!succeed, return nil);
+	}
+	siSiliStr str = (siSiliStr)si_utf16ToUtf8Str(&tmp, resultWide, len);
+
+	return str;
+}
+
+
+siSearchResult siapp_fileManagerOpen(siAllocator* alloc, siSearchConfig config) {
+	siAllocator* stack = si_allocatorMake(SI_KILO(4));
+	IFileOpenDialog* pfd;
+	IShellItemArray* items;
+
+
+	CoCreateInstance(&CLSID_FileOpenDialog, NULL, CLSCTX_ALL, &IID_IFileOpenDialog, (rawptr*)&pfd);
+
+	{
+		if (config.title != nil) {
+			siUtf16String utf16 = si_utf8ToUtf16Str(stack, config.title, nil);
+			pfd->lpVtbl->SetTitle(pfd, utf16);
+			si_allocatorReset(stack);
+		}
+	}
+	{
+		FILEOPENDIALOGOPTIONS fos = FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST;
+		switch (config.options) {
+			case SI_SEARCH_ALLOW_MULTIPLE: {
+				fos |= FOS_ALLOWMULTISELECT;
+				break;
+			}
+			case SI_SEARCH_FOLDERS_ONLY: {
+				fos |= FOS_PICKFOLDERS;
+				break;
+			}
+			case SI_SEARCH_FOLDERS_ONLY | SI_SEARCH_ALLOW_MULTIPLE: {
+				fos |= FOS_PICKFOLDERS | FOS_ALLOWMULTISELECT;
+				break;
+			}
+		}
+		pfd->lpVtbl->SetOptions(pfd, fos);
+	}
+	{
+		if (config.defaultPath != nil) {
+			siUtf16String utf16 = si_utf8ToUtf16Str(stack, config.defaultPath, nil);
+			IShellItem* folder;
+			HRESULT res = SHCreateItemFromParsingName(
+				utf16, nil, &IID_IShellItem, (rawptr*)&folder
+			);
+
+			if (res == SI_OKAY) {
+				pfd->lpVtbl->SetFolder(pfd, folder);
+				folder->lpVtbl->Release(folder);
+			}
+			si_allocatorReset(stack);
+		}
+	}
+	{
+		if (config.filetypes != nil) {
+			COMDLG_FILTERSPEC* tmp = si_mallocArray(stack, COMDLG_FILTERSPEC, config.filetypesLen);
+
+			for_range (i, 0, config.filetypesLen) {
+				siSearchFilterSpec spec = config.filetypes[i];
+
+				tmp[i].pszName = si_utf8ToUtf16Str(stack, spec.name, nil);
+				tmp[i].pszSpec = si_utf8ToUtf16Str(stack, spec.filetype, nil);
+			}
+
+			pfd->lpVtbl->SetFileTypes(pfd, config.filetypesLen, tmp);
+			si_allocatorReset(stack);
+		}
+	}
+
+	pfd->lpVtbl->Show(pfd, nil);
+	{
+		HRESULT err = pfd->lpVtbl->GetResults(pfd, &items);
+		SI_STOPIF(err != 0, return (siSearchResult){nil, 0});
+	}
+
+	DWORD len;
+	items->lpVtbl->GetCount(items, &len);
+
+	siSearchResult res;
+	res.len = len;
+	res.items = si_mallocArray(alloc, siSiliStr, len);
+
+	stack->offset = 0;
+	for_range (i, 0, len) {
+		IShellItem* item;
+		LPWSTR widePath = nil;
+
+		items->lpVtbl->GetItemAt(items, i, &item);
+		item->lpVtbl->GetDisplayName(item, SIGDN_FILESYSPATH, &widePath);
+
+		usize* strLen = si_mallocItem(alloc, usize);
+		res.items[i] = (siSiliStr)si_utf16ToUtf8Str(alloc, widePath, strLen);
+	}
+
+	items->lpVtbl->Release(items);
+	pfd->lpVtbl->Release(pfd);
+
+	return res;
+}
+
+
+F_TRAITS(inline)
+siSiliStr siapp_appDataPathMake(cstring folderName) {
+	return siapp_appDataPathMakeEx(folderName, si_cstrLen(folderName));
+}
+siSiliStr siapp_appDataPathMakeEx(cstring folderName, usize folderNameLen) {
+	static char buffer[sizeof(usize) + MAX_PATH + 1];
+	siAllocator tmp = si_allocatorMakeTmp(buffer, sizeof(buffer));
+
+	siSiliStr str;
+	usize* len = si_mallocItem(&tmp, usize);
+	u16 resultWide[MAX_PATH + 1];
+
+	{
+		i32 res = SHGetFolderPathW(nil, CSIDL_LOCAL_APPDATA, nil, 0, resultWide);
+		SI_STOPIF(res != S_OK, return nil);
+		str = (siSiliStr)si_utf16ToUtf8Str(&tmp, resultWide, len);
+	}
+	usize curLen = *len;
+
+	str[curLen] = SI_PATH_SEPARATOR;
+	memcpy(&str[curLen + 1], folderName, folderNameLen);
+	str[curLen + 1 + folderNameLen] = SI_PATH_SEPARATOR;
+
+	*len += 1 + folderNameLen + 1;
+
+	return str;
 }
 
 
