@@ -1,5 +1,5 @@
-#include <deps/sili/sili.h>
-#include <deps/sili/siliapp.h>
+#include <deps/sili.h>
+#include <siliapp.h>
 
 
 typedef SI_ENUM(u32, siAlignment)  {
@@ -65,6 +65,7 @@ typedef union {
         i32 radius;
     } circle;
     siImage image;
+    siText text;
 } siShape;
 
 typedef SI_ENUM(i32, siDrawCommandFeatures) {
@@ -151,7 +152,7 @@ siVec2 siui_alignmentCalculateArea2fEx(siVec2 largerArea, siVec2 alignedArea,
         siAlignment align, siPoint posPad);
 
 F_TRAITS(inline)
-siVec2 siui_alignmentCalculateRect4fEx(siVec4 largerArea, siVec2 alignedArea,
+siVec2 siui_alignmentCalculateRectExF(siVec4 largerArea, siVec2 alignedArea,
         siAlignment align, siPoint posPad) {
 
     siVec2 pos = siui_alignmentCalculateArea2fEx(
@@ -272,22 +273,22 @@ void siui_drawTextField4f(siWindow* win, siVec4 rect, siColor rectColor, siText 
 
 void siui_drawTextFieldEx(siWindow* win, siRect rect, siColor rectColor, siText text,
         u32 textSize, siAlignment textAlignment, siPoint textBasePos) {
-    siVec2 alignedArea = siapp_textGetArea2f(text, textSize);
+    siVec2 alignedArea = siapp_textGetAreaF(text, textSize);
     siVec2 pos = siui_alignmentCalculateArea2fEx(SI_VEC2(rect.width, rect.height), alignedArea, textAlignment, textBasePos);
     pos.x += rect.x;
     pos.y += rect.y;
 
     siapp_drawRect(win, rect, rectColor);
-    siapp_drawText2f(win, text, pos, textSize);
+    siapp_drawTextF(win, text, pos, textSize);
 }
 
 void siui_drawTextField4fEx(siWindow* win, siVec4 rect, siColor rectColor, siText text,
         u32 textSize, siAlignment textAlignment, siPoint textBasePos) {
-    siVec2 alignedArea = siapp_textGetArea2f(text, textSize);
-    siVec2 pos = siui_alignmentCalculateRect4fEx(rect, alignedArea, textAlignment, textBasePos);
+    siVec2 alignedArea = siapp_textGetAreaF(text, textSize);
+    siVec2 pos = siui_alignmentCalculateRectExF(rect, alignedArea, textAlignment, textBasePos);
 
-    siapp_drawRect4f(win, rect, rectColor);
-    siapp_drawText2f(win, text, pos, textSize);
+    siapp_drawRectF(win, rect, rectColor);
+    siapp_drawTextF(win, text, pos, textSize);
 }
 
 F_TRAITS(inline)
@@ -364,7 +365,7 @@ void siui_drawButton(siButton button) {
         case SI_SHAPE_RECT_4F: {
             siVec4 rect = cmd->shape.rect4f;
             if (button.cmd.features & SI_FEATURE_OUTLINE) {
-                siapp_drawRect4f(button.win, rect, cmd->outline.color);
+                siapp_drawRectF(button.win, rect, cmd->outline.color);
                 rect.x += cmd->outline.size;
                 rect.y += cmd->outline.size;
                 rect.z -= cmd->outline.size * 2;
@@ -380,7 +381,7 @@ void siui_drawButton(siButton button) {
                 );
             }
             else {
-                siapp_drawRect4f(button.win, rect, cmd->color);
+                siapp_drawRectF(button.win, rect, cmd->color);
             }
             break;
         }
@@ -557,10 +558,6 @@ void siui_buttonImageSetEx(siButton* button, siImage image, siArea size, siAlign
     button->imagePosPad = imagePosPad;
 }
 
-
-void siapp_fontFree(siFont font) {
-    siapp_textureAtlasFree(font.sheet.base.atlas);
-}
 
 typedef siButton siExpandable;
 
@@ -779,7 +776,7 @@ void siui_drawTextInputEx(siTextInput* t, i32 textSize, siAlignment align) {
         base.z = 0.25;
         base.w = buttonR->height - outline * 2;
 
-        siapp_drawRect4f(t->button.win, base, SI_RGB(255, 255, 255));
+        siapp_drawRectF(t->button.win, base, SI_RGB(255, 255, 255));
         SI_STOPIF(delta >= 1000, t->clockStart = end);
     }
 

@@ -8,7 +8,7 @@ int main(void) {
 	siWindow* win = siapp_windowMake(
 		alloc, "Siliapp events",
 		SI_AREA(0, 0),  SI_WINDOW_CENTER | SI_WINDOW_OPTIMAL_SIZE | SI_WINDOW_SCALING,
-		0, 0, SI_AREA(1, 1)
+		0, 0, SI_AREA(0, 0)
 	);
 	siapp_windowBackgroundSet(win, SI_RGB(0, 0, 0));
 
@@ -25,7 +25,7 @@ int main(void) {
 				}
 				case SI_EVENT_KEY_PRESS: {
 					si_printf(
-						"A key has been  pressed, the most recent one being '%#X/%c' [Char(s): '%*s'].\n",
+						"A key has been pressed, the most recent one being '%#X/%c' [Char(s): '%*s'].\n",
 						e->curKey, e->curKey, e->charBufferLen, e->charBuffer
 					);
 					break;
@@ -93,9 +93,10 @@ int main(void) {
 				}
 			}
 		}
-	}
+    }
 
 	siapp_windowClose(win);
 	si_allocatorFree(alloc);
 	return 0;
 }
+

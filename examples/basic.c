@@ -4,14 +4,16 @@
 
 void secondWindowLoop(rawptr alloc);
 
+#define CURSOR_W 16
+#define CURSOR_H 32
 
 int main(void) {
 	siAllocator* alloc = si_allocatorMake(SI_KILO(8));
 
 	siWindow* win = siapp_windowMake(
-		alloc, "Example Window | ĄČĘĖĮŠŲ | 「ケケア」",
+		alloc, "Example window | ĄČĘĖĮŠŲ | 「ケケア」",
 		SI_AREA(0, 0), SI_WINDOW_DEFAULT | SI_WINDOW_OPTIMAL_SIZE | SI_WINDOW_SCALING,
-		4, 0, SI_AREA(1, 1)
+		4, 0, SI_AREA(0, 0)
 	);
 	siapp_windowBackgroundSet(win, SI_RGB(0, 0, 0));
 
@@ -48,7 +50,6 @@ int main(void) {
 	while (siapp_windowIsRunning(win) && !siapp_windowKeyClicked(win, SK_ESC)) {
 		siapp_windowUpdate(win, true);
 		const siWindowEvent* e = siapp_windowEventGet(win);
-
 
 		if (e->type.windowMove) {
 			si_printf("Window is being moved: %ix%i\n", e->windowPos.x, e->windowPos.y);
@@ -136,7 +137,7 @@ int main(void) {
 		siapp_windowRender(win);
 		siapp_windowSwapBuffers(win);
 	}
-	siapp_cursorFree(customCursor);
+    siapp_cursorFree(customCursor);
 
 	for_range (i, 0, countof(drops)) {
 		siapp_windowDragAreaEnd(drops[i]);
@@ -145,14 +146,12 @@ int main(void) {
 
 	while (t.isRunning) { si_sleep(1000); }
 	si_allocatorFree(alloc);
-	return 0;
 }
-
 
 void secondWindowLoop(rawptr alloc) {
 	siWindow* win = siapp_windowMakeEx(
 		alloc, "Second window", SI_POINT(200, 200), SI_AREA(400, 400),
-		SI_WINDOW_RESIZABLE | SI_WINDOW_RENDERING_OPENGL, 2, 0, SI_AREA(1, 1)
+		SI_WINDOW_RESIZABLE | SI_WINDOW_RENDERING_OPENGL, 2, 0, SI_AREA(0, 0)
 	);
 	siapp_windowBackgroundSet(win, SI_RGB(113, 57, 173));
 
@@ -170,7 +169,7 @@ void secondWindowLoop(rawptr alloc) {
 		siapp_drawTriangleRight(
 			win,
 			SI_POINT(widthHalf - length / 2, 50), length, 45,
-			SI_RGB(0, 0, 255)
+			SI_RGB(0, 0, 0)
 		);
 
 		siapp_windowRender(win);
@@ -180,3 +179,4 @@ void secondWindowLoop(rawptr alloc) {
 	siapp_windowClose(win); // We must close the window in the same thread where
 							// the window was created at!
 }
+

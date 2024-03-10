@@ -52,6 +52,7 @@ WARNING
 
 #include <sili.h>
 #include <stb_truetype.h> // TODO(EimaMei): Remove later.
+#include <stb_image.h>
 
 #if !defined(SI_INCLUDE_SI_H)
 	#error "sili.h must be included to use this library."
@@ -68,7 +69,11 @@ extern "C" {
 	#error "siliapp.h is not implemented for Wayland"
 	#define SIAPP_PLATFORM_API_WAYLAND
 #elif defined(SI_SYSTEM_UNIX) && !defined(SI_SYSTEM_ANDROID)
-	#error "siliapp.h is not implemented for Unix"
+//#error "siliapp.h is not implemented for Unix"
+    #include <X11/Xlib.h>
+    #include <X11/keysym.h>
+    #include <X11/cursorfont.h>
+    #include <X11/Xcursor/Xcursor.h>
 	#define SIAPP_PLATFORM_API_X11
 #elif defined(SI_SYSTEM_WINDOWS)
 	#define NOMINMAX            1
@@ -84,7 +89,7 @@ extern "C" {
 	#undef WIN32_MEAN_AND_LEAN
 	#undef VC_EXTRALEAN
 
-#define SIAPP_PLATFORM_API_WIN32
+    #define SIAPP_PLATFORM_API_WIN32
 #elif defined(SI_SYSTEM_OS_X)
 	#error "siliapp.h is not implemented for MacOS"
 	#define SIAPP_PLATFORM_API_COCOA
@@ -107,6 +112,12 @@ extern "C" {
 			); SI_UNUSED(buffer); SI_UNUSED(len); SI_UNUSED(width); SI_UNUSED(height); SI_UNUSED(channels)
 			#define SIAPP_IMAGE_FREE(buffer) SI_UNUSED(buffer)
 	#endif
+#endif
+
+#if defined(SIAPP_PLATFORM_API_WIN32)
+    #define SI_MAX_PATH_LEN MAX_PATH // TODO RELPACE
+#else
+    #define SI_MAX_PATH_LEN NAME_MAX
 #endif
 
 typedef SI_ENUM(b32, siWindowArg) {
@@ -194,13 +205,13 @@ typedef SI_ENUM(u32, siMouseWheelType) {
 	SI_MOUSE_WHEEL_COUNT = SI_MOUSE_WHEEL_RIGHT
 };
 
-typedef SI_ENUM(i32, siCursorType) {
+typedef SI_ENUM(i64, siCursorType) {
 	SI_CURSOR_ARROW = 1,
 	SI_CURSOR_HAND,
 	SI_CURSOR_DOUBLE_ARROW_HORIZONTAL,
 	SI_CURSOR_TEXT_SELECT,
-	SI_CURSOR_COUNT,
 
+    SI_CURSOR_COUNT,
 	SI_CURSOR_DEFAULT = SI_CURSOR_ARROW
 };
 
@@ -297,7 +308,7 @@ typedef struct {
 
 	f64 curTime;
 	f64 timeDelta;
-	
+
 	struct {
 		siKeyType keyCache[16];
 		usize keyCacheLen;
@@ -305,8 +316,9 @@ typedef struct {
 } siWindowEvent;
 
 
-typedef struct {
+typedef union {
 	f32 m[16];
+    siVec4 column[4];
 } siMatrix;
 
 typedef struct {
@@ -315,25 +327,31 @@ typedef struct {
 	u32 texID;
 	u32 texWidth;
 	u32 texHeight;
+
+    u32 curWidth;
 	u32 totalWidth;
 
-	u32 curCount;
-	u32 maxCount;
+    u32 curCount;
 } siTextureAtlas;
 
 typedef struct {
 	siTextureAtlas* atlas;
-	u32 id;
 	siArea size;
 	f32 x1, y1, x2, y2;
+    u32 id;
 } siImage;
 
 
 typedef struct {
 	b32 isLoaded;
-	siVersion versionSelected;
 	siVersion versionMax;
-	i32 max2DTexSize;
+	i32 texSizeMax;
+
+    siVersion versionSelected;
+    u32 stencilSize;
+    u32 sampleBuffers;
+    b32 stereo;
+    u32 auxBuffers;
 } siOpenGLInfo;
 
 typedef struct {
@@ -343,6 +361,11 @@ typedef struct {
 	i32 baseVertex;
 	u32 baseInstance;
 } siOpenGLDrawCMD;
+
+typedef struct {
+    u32 texID;
+    u32 matrixID;
+} siOpenGLIDs;
 
 typedef struct {
 	rawptr context;
@@ -356,8 +379,9 @@ typedef struct {
 	u32 uniformMvp;
 
 	siVec4 curColor;
-	siVec4 bgColor;
 	siVec2 curTexCoords;
+    siVec4 rotation;
+    siVec4 bgColor;
 
 	const siColor* gradient;
 	usize gradientLen;
@@ -365,16 +389,17 @@ typedef struct {
 	siImage* curTex;
 	siImage defaultTex;
 
-	f32* vertices;
-	f32* colors;
-	f32* texCoords;
-	u32* batchInfo;
-	u16* indices;
+	siVec3* vertices;
+	siVec4* colors;
+	siVec2* texCoords;
+	siOpenGLIDs* batchInfo;
 	siMatrix* matrices;
 	siOpenGLDrawCMD* CMDs;
 
 	u32 vertexCounter;
 	u32 drawCounter;
+
+    u32 maxVertexCount;
 } siWinRenderingCtxOpenGL;
 
 typedef struct {
@@ -384,6 +409,9 @@ typedef struct {
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	HWND hwnd;
 	HDC hdc;
+#elif defined(SIAPP_PLATFORM_API_X11)
+    Display* display;
+    Window hwnd;
 #endif
 
 	union {
@@ -398,13 +426,15 @@ typedef struct {
 
 	siWindowEvent e;
 	siWindowArg arg;
-	u32 maxDrawCount;
 
 	siVec2 scaleFactor;
 	siArea originalSize;
 
 	siCursorType cursor;
 	b32 cursorSet;
+#if defined(SIAPP_PLATFORM_API_X11)
+    Cursor __x11BlankCursor;
+#endif
 } siWindow;
 
 
@@ -503,18 +533,21 @@ typedef struct {
 #define SI_GLYPHSET_LATIN_BASIC          {0x0020, 0x007E}
 #define SI_GLYPHSET_LATIN_1_SUPPLEMENT   {0x00A0, 0x00FF}
 #define SI_GLYPHSET_LATIN_EXTENDED_A     {0x0100, 0x017F}
+
+#define SI_GLYPHSET_HIRAGANA {0x3040, 0x309F}
 #define SI_GLYPHSET_KATAKANA {0x30A0, 0x30FF}
 // TODO: Enforce a chronological order.
 
+#define SI_GLYPHSET_END {'?', '?'}
+
+
 #define SI_CHARSET_WGL4 \
-	si_buf(siGlyphSet, \
 		SI_GLYPHSET_ASCII, SI_GLYPHSET_ISO_8859_1, SI_GLYPHSET_LATIN_1_SUPPLEMENT, \
 		SI_GLYPHSET_LATIN_EXTENDED_A, {0x0192, 0x0192}, {0x01FA, 0x01FF}, {0x02C6, 0x02C7}, \
 		{0x02C9, 0x02C9}, {0x02D7, 0x02DD}, {0x0384, 0x038B}, {0x038C, 0x38C}, \
 		{0x038E, 0x03A1}, {0x03A3, 0x03CE}, {0x400, 0x45F}, {0x0490, 0x0491}, \
 		{0x1E80, 0x1E85}, {0x2013, 0x2015}, {0x2016, 0x201E}, {0x2020, 0x2022}, \
-		{0x0001F5FF, 0x0001F5FF} \
-	)
+		{0x0001F5FF, 0x0001F5FF}
 #define SI_CHARSET_DEFAULT SI_CHARSET_WGL4
 
 
@@ -556,10 +589,12 @@ typedef SI_ENUM(i32, siDropState) {
 };
 
 typedef struct {
+#if defined(SIAPP_PLATFORM_API_WIN32)
 	IDropTarget target;
 	IDataObject* pDataObj;
 	siWindow* win;
 	HWND subHwnd;
+#endif
 
 	siDropState state;
 } siDropEvent;
@@ -576,8 +611,11 @@ typedef struct {
 	u32 len;
 	/* */
 	u32 curIndex;
+
+#if defined(SIAPP_PLATFORM_API_WIN32)
 	/* */
 	STGMEDIUM stgm;
+#endif
 } siDropHandle;
 
 
@@ -613,7 +651,7 @@ siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
 		siArea size, siWindowArg arg, u32 maxDrawCount, u32 maxTexCount, siArea maxTexRes);
 
 /* Checks the changes for the specified window and updates the contents of 'out'. */
-void siapp_windowUpdate(siWindow* win, b32 await);
+const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await);
 
 /* Writes new graphics into the current draw buffer. */
 void siapp_windowRender(siWindow* win);
@@ -768,11 +806,14 @@ void siapp_spriteSheetSpriteSetEx(siSpriteSheet sheet, usize index, const siByte
 
 
 /* */
-siFont siapp_fontLoad(siWindow* win, cstring path, i32 size, siGlyphSet* glyphs,
-		usize arrayLen);
+siFont siapp_fontLoad(siWindow* win, cstring path, i32 size);
+/* */
+siFont siapp_fontLoadExtra(siWindow* win, cstring path, i32 size, usize extraChars);
 /* */
 siFont siapp_fontLoadEx(siWindow* win, cstring path, i32 size, siGlyphSet* glyphs,
-		usize arrayLen, u32 extraChars);
+        u32 extraChars);
+/* */
+void siapp_fontFree(siFont font);
 
 /* */
 f32 siapp_fontCalculateScaleFactor(siFont font, u32 textSize);
@@ -798,7 +839,7 @@ f32 siapp_textAdvanceXGet(siText text, usize index);
 /* */
 siArea siapp_textGetArea(siText text, u32 size);
 /* */
-siVec2 siapp_textGetArea2f(siText text, u32 size);
+siVec2 siapp_textGetAreaF(siText text, u32 size);
 
 
 /* Draws a vertex with the two specified NDC floats. */
@@ -830,9 +871,16 @@ void siapp_drawTriangleIsosceles(siWindow* win, siPoint start, f32 length,
 
 /* Draws a circle with 90 sides based on the specified position, radius and color, */
 void siapp_drawCircle(siWindow* win, siPoint pos, i32 radius, siColor color);
+/* */
+void siapp_drawCircleEx(siWindow* win, siPoint pos, i32 radius, u32 sides, siColor color);
 /* Draws a circle based on the specified position, radius, color and sides. */
-void siapp_drawCircleEx(siWindow* win, siPoint pos, i32 radius, siColor color,
-		u32 sides);
+void siapp_drawPolygon(siWindow* win, siRect rect, u32 sides, siColor color);
+/* */
+void siapp_drawCircleF(siWindow* win, siVec2 pos, i32 radius, siColor color);
+/* */
+void siapp_drawCircleExF(siWindow* win, siVec2 pos, i32 radius, u32 sides, siColor color);
+/* Draws a circle based on the specified position, radius, color and sides. */
+void siapp_drawPolygonF(siWindow* win, siVec4 rect, u32 sides, siColor color);
 
 /* */
 void siapp_drawText(siWindow* win, siText text, siPoint pos, u32 size);
@@ -877,11 +925,23 @@ siOpenGLInfo siapp_OpenGLGetInfo(void);
 
 /* Initializes an OpenGL context of the specified window. Returns 'false' if the
  * context was failed to be created. */
-b32 siapp_windowOpenGLInit(siWindow* win, siArea screenSize, u32 maxTexCount, siArea maxTexRes);
+b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount, siArea maxTexRes);
 /* Renders the OpenGL graphics onto the screen. */
 void siapp_windowOpenGLRender(siWindow* win);
 /* Destroys the OpenGL context of the window. */
 void siapp_windowOpenGLDestroy(siWindow* win);
+
+/* Sets the max OpenGL version used for the app (by default it picks the most up
+ * to date version on the system). */
+void siapp_OpenGLVersionSet(siVersion ver);
+/* Sets the buffer bit size (8 by default). */
+void siapp_OpenGLStencilSet(u32 stencil);
+/* Sets the number of sampling buffers (4 by default). */
+void siapp_OpenGLSamplesSet(u32 samples);
+/* Sets a boolean for stereo (false by default). */
+void siapp_OpenGLStereoSet(b32 stereo);
+/* Sets the number of aux buffers (0 by default). */
+void siapp_OpenGLAuxBuffersSet(u32 auxBuffers);
 
 
 /* Opens an OS message box with the specified tittle, message, buttons and icons.
@@ -898,114 +958,135 @@ siMessageBoxResult siapp_messageBoxEx(const siWindow* win, cstring title, usize 
 
 #if defined(SIAPP_IMPLEMENTATION)
 
+#if 1 /* SETUP */
+
 #define SIGL_IMPLEMENTATION
 #define WGL_ARB_create_context
 #define WGL_ARB_create_context_profile
 #define WGL_EXT_swap_control
 #include <siligl.h>
 
-#if 1 /* SETUP */
+
+#if 1 /* Common. */
+
+intern u32 SI_WINDOWS_NUM = 0;
 
 #define SK_TO_INT(sk) (*((u8*)&sk))
 #define INT_TO_SK(num) (*((siKeyState*)&(u8){num}))
 
+#if defined (SIAPP_PLATFORM_API_WIN32)
+    #define SIAPP_ERROR_CHECK(condition, function) \
+        if (SI_UNLIKELY(condition)) { \
+            siAllocator* tmp = si_allocatorMakeStack(256); \
+            i32 err = GetLastError(); \
+            siapp_messageBox( \
+                    function " failed", \
+                    si_cstrMakeFmt(tmp, "Error: %#X (%s)", err, siapp_osErrToStr(err)), \
+                    SI_MESSAGE_BOX_OK, \
+                    SI_MESSAGE_BOX_ICON_ERROR \
+                    ); \
+            return false; \
+        }
+#else
+    #define SIAPP_ERROR_CHECK(condition, function) \
+        if (SI_UNLIKELY(condition)) { \
+            siapp_messageBox( \
+                function " failed", \
+                "", \
+                SI_MESSAGE_BOX_OK, \
+                SI_MESSAGE_BOX_ICON_ERROR \
+            ); \
+            return false; \
+        }
+#endif
+
+#define SIAPP_ERROR_MSGBOX_GL(programID, title) \
+    do { \
+        GLint len; \
+        glGetProgramiv(programID, GL_INFO_LOG_LENGTH, &len); \
+        \
+        char* msg = (char*)malloc(len); \
+        glGetProgramInfoLog(programID, len, nil, msg); \
+        siapp_messageBox(title, msg, SI_MESSAGE_BOX_OK, SI_MESSAGE_BOX_ICON_ERROR); \
+        \
+        free(msg); \
+    } while (0)
+
+#define siapp__mouseButtonPress(e, type) \
+    do { \
+        siKeyState* state = &e->mouseButtons[type - 1]; \
+        state->clicked = true; \
+        state->pressed = true; \
+        state->released = false; \
+        \
+        SK_TO_INT(e->keys[SK__EVENT]) |= SI_BIT(6); \
+        e->curMouse = type; \
+    } while(0)
+#define siapp__mouseButtonRelease(e, type) \
+    do { \
+        siKeyState* state = &e->mouseButtons[type - 1]; \
+        state->clicked = false; \
+        state->pressed = false; \
+        state->released = true; \
+        \
+        SK_TO_INT(e->keys[SK__EVENT]) |= SI_BIT(6); \
+        e->curMouse = type; \
+    } while (0)
+
+
+F_TRAITS(intern)
+void siapp__resizeWindow(siWindow* win, i32 width, i32 height) {
+   win->e.type.windowResize = true;
+   win->e.windowSize = SI_AREA(width, height);
+
+   switch (win->arg & SI_WINDOW_RENDERING_BITS) {
+       case SI_WINDOW_RENDERING_OPENGL: {
+           siWinRenderingCtxOpenGL* gl = &win->render.opengl;
+
+           if (win->arg & SI_WINDOW_SCALING) {
+               glViewport(0, 0, width, height);
+           }
+           if (win->arg & SI_WINDOW_KEEP_ASPECT_RATIO) {
+               i32 newY = 0;
+
+               if (height <= win->originalSize.height) {
+                   newY = height - win->originalSize.height;
+                   height = win->originalSize.height;
+               }
+
+               f32 aspect = (f32)height / gl->size.height;
+               i32 newH = gl->size.height * aspect;
+               i32 newW = gl->size.width * aspect;
+
+               glViewport(0, newY, newW, newH);
+           }
+           else {
+               glViewport(0, height - gl->size.height, gl->size.width, gl->size.height);
+           }
+
+           GLint view[4];
+           glGetIntegerv(GL_VIEWPORT, view);
+           f32 viewW = view[2];
+           f32 viewH = view[3];
+
+           win->scaleFactor = SI_VEC2(viewW / gl->size.width, viewH / gl->size.height);
+           win->e.windowSizeScaled = SI_AREA(
+                   si_round(width / win->scaleFactor.x),
+                   si_round(height / win->scaleFactor.y)
+                   );
+           break;
+       }
+   }
+}
+#endif
+
 #if defined(SIAPP_PLATFORM_API_WIN32)
 
-u32 SI_WINDOWS_NUM = 0;
-siByte __win32KBState[256];
-
+intern siByte __win32KBState[256];
 
 #define SI_LOWORD_XY(lw) ((i32)(i16)LOWORD(lw))
 #define SI_HIWORD_XY(lw) ((i32)(i16)HIWORD(lw))
 
-#define SIAPP_ERROR_CHECK(condition, function) \
-	if (SI_UNLIKELY(condition)) { \
-		siAllocator* tmp = si_allocatorMakeStack(256); \
-		i32 err = GetLastError(); \
-		siapp_messageBox( \
-				function " failed", \
-				si_cstrMakeFmt(tmp, "Error: %#X (%s)", err, siapp_osErrToStr(err)), \
-				SI_MESSAGE_BOX_OK, \
-				SI_MESSAGE_BOX_ICON_ERROR \
-				); \
-		return false; \
-	}
-
-#define SIAPP_ERROR_MSGBOX_GL(programID, title) \
-	do { \
-		GLint len; \
-		glGetProgramiv(programID, GL_INFO_LOG_LENGTH, &len); \
-		char* msg = (char*)malloc(len); \
-		glGetProgramInfoLog(programID, len, nil, msg); \
-		siapp_messageBox(title, msg, SI_MESSAGE_BOX_OK, SI_MESSAGE_BOX_ICON_ERROR); \
-		free(msg); \
-	} while (0)
-
-#define siapp__mouseButtonPress(e, type) \
-	do { \
-		siKeyState* state = &e->mouseButtons[type - 1]; \
-		state->clicked = true; \
-		state->pressed = true; \
-		state->released = false; \
-		\
-		SK_TO_INT(e->keys[SK__EVENT]) |= SI_BIT(6); \
-		e->curMouse = type; \
-	} while(0)
-#define siapp__mouseButtonRelease(e, type) \
-	do { \
-		siKeyState* state = &e->mouseButtons[type - 1]; \
-		state->clicked = false; \
-		state->pressed = false; \
-		state->released = true; \
-		\
-		SK_TO_INT(e->keys[SK__EVENT]) |= SI_BIT(6); \
-		e->curMouse = type; \
-	} while (0)
-
-F_TRAITS(intern)
-void siapp__resizeWindow(siWindow* win, i32 width, i32 height) {
-	win->e.type.windowResize = true;
-	win->e.windowSize = SI_AREA(width, height);
-
-	switch (win->arg & SI_WINDOW_RENDERING_BITS) {
-		case SI_WINDOW_RENDERING_OPENGL: {
-			siWinRenderingCtxOpenGL* gl = &win->render.opengl;
-
-			if (win->arg & SI_WINDOW_SCALING) {
-				glViewport(0, 0, width, height);
-			}
-			if (win->arg & SI_WINDOW_KEEP_ASPECT_RATIO) {
-				i32 newY = 0;
-
-				if (height <= win->originalSize.height) {
-					newY = height - win->originalSize.height;
-					height = win->originalSize.height;
-				}
-
-				f32 aspect = (f32)height / gl->size.height;
-				i32 newH = gl->size.height * aspect;
-				i32 newW = gl->size.width * aspect;
-
-				glViewport(0, newY, newW, newH);
-			}
-			else {
-				glViewport(0, height - gl->size.height, gl->size.width, gl->size.height);
-			}
-
-			GLint view[4];
-			glGetIntegerv(GL_VIEWPORT, view);
-			f32 viewW = view[2];
-			f32 viewH = view[3];
-
-			win->scaleFactor = SI_VEC2(viewW / gl->size.width, viewH / gl->size.height);
-			win->e.windowSizeScaled = SI_AREA(
-				si_round(width / win->scaleFactor.x),
-				si_round(height / win->scaleFactor.y)
-			);
-			break;
-		}
-	}
-}
 
 F_TRAITS(inline intern)
 u32 siapp__dropUpdatePress(IDropTarget* target, DWORD grfKeyState, POINTL pt,
@@ -1375,10 +1456,50 @@ HRESULT IDropTarget_Drop(IDropTarget* target, IDataObject* pDataObj,
 }
 #endif
 
+#elif defined(SIAPP_PLATFORM_API_X11)
 
+intern Display* SI_X11_DISPLAY = nil;
+intern Atom WM_DELETE_WINDOW,
+            NET_WM_NAME,
+            NET_WM_ICON,
+            XA_STRING,
+            UTF8_STRING,
+            CLIPBOARD,
+            XSEL_DATA,
+            SAVE_TARGETS,
+            TARGETS,
+            MULTIPLE,
+            ATOM_PAIR,
+            CLIPBOARD_MANAGER;
+
+intern Cursor SI_X11_CURSORS[4] = {0};
+intern siWindow* SI_ROOT_WINDOW = nil;
+
+F_TRAITS(inline intern)
+void siapp__x11CheckStartup(void) {
+    SI_STOPIF(SI_X11_DISPLAY != nil, return);
+
+    XInitThreads();
+    SI_X11_DISPLAY = XOpenDisplay(nil);
+    SI_ASSERT_NOT_NULL(SI_X11_DISPLAY);
+
+    NET_WM_NAME = XInternAtom(SI_X11_DISPLAY, "_NET_WM_NAME", False);
+    NET_WM_ICON = XInternAtom(SI_X11_DISPLAY, "_NET_WM_ICON", False);
+    UTF8_STRING = XInternAtom(SI_X11_DISPLAY, "UTF8_STRING", False);
+    XA_STRING = XInternAtom(SI_X11_DISPLAY, "XA_STRING", False);
+    CLIPBOARD   = XInternAtom(SI_X11_DISPLAY, "CLIPBOARD", False);
+	SAVE_TARGETS = XInternAtom(SI_X11_DISPLAY, "SAVE_TARGETS", False);
+	TARGETS = XInternAtom(SI_X11_DISPLAY, "TARGETS", False);
+	MULTIPLE = XInternAtom(SI_X11_DISPLAY, "MULTIPLE", False);
+	ATOM_PAIR = XInternAtom(SI_X11_DISPLAY, "ATOM_PAIR", False);
+	CLIPBOARD_MANAGER = XInternAtom(SI_X11_DISPLAY, "CLIPBOARD_MANAGER", False);
+    XSEL_DATA   = XInternAtom(SI_X11_DISPLAY, "XSEL_DATA", False);
+	WM_DELETE_WINDOW = XInternAtom(SI_X11_DISPLAY, "WM_DELETE_WINDOW", True);
+}
 #endif
 
-#if 1
+
+#if 1 /* OpenGL */
 
 #define MULTILINE_STR(...) #__VA_ARGS__
 
@@ -1399,17 +1520,18 @@ typedef SI_ENUM(i32, siShaderIndex) {
 	SI_SHADER_OFFSET
 };
 
-#define i32ToNDCX(num, windowCord) (((f32)(num) / (f32)((windowCord) / 2.0f)) - 1.0f)
-#define i32ToNDCY(num, windowCord) (((f32)(num) / (f32)((windowCord) / -2.0f)) + 1.0f)
+#define i32ToNDCX(num, windowCord) (((+2.0f * (num)) / (windowCord)) - 1.0f)
+#define i32ToNDCY(num, windowCord) (((-2.0f * (num)) / (windowCord)) + 1.0f)
 
 #define GL_BUFFER_MAKE(ID, var, size) \
 	do { \
 		glBindBuffer(GL_ARRAY_BUFFER, gl->VBOs[ID]); \
 		glBufferStorage(GL_ARRAY_BUFFER, size, nil, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT); \
 		var = glMapBufferRange(GL_ARRAY_BUFFER, 0, size, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT); \
+        memset(var, 0, size); \
 	} while(0)
 
-static siOpenGLInfo glInfo = {0};
+static siOpenGLInfo glInfo = {false, {0, 0}, 0, {0, 0}, 8, 4, false, 0};
 
 static const char defaultVShaderCode[] = MULTILINE_STR(
 	\x23version 440\n
@@ -1469,10 +1591,10 @@ i32 si_OpenGLShaderMake(i32 shaderType, cstring source) {
 	return shader;
 }
 
-void si_addVertexesToCMD(siWinRenderingCtxOpenGL* gl, u32 count, u32 vertexCount) {
-	usize index = 2 * gl->drawCounter;
-	gl->batchInfo[index + 0] = gl->curTex->atlas->texID - 1;
-	gl->batchInfo[index + 1] = gl->drawCounter;
+void siapp__addVertexesToCMD(siWinRenderingCtxOpenGL* gl, u32 count, u32 vertexCount) {
+	siOpenGLIDs* IDs = &gl->batchInfo[gl->drawCounter];
+	IDs->texID = gl->curTex->atlas->texID - 1;
+	IDs->matrixID = gl->drawCounter;
 
 	siOpenGLDrawCMD* cmd = &gl->CMDs[gl->drawCounter];
 	cmd->count = count;
@@ -1486,8 +1608,9 @@ void si_addVertexesToCMD(siWinRenderingCtxOpenGL* gl, u32 count, u32 vertexCount
 	SI_ASSERT(gl->gradientLen <= vertexCount);
 	for_range (i, 0, gl->gradientLen) {
 		siColor tmp = gl->gradient[i];
-		siVec4 color = SI_VEC4(tmp.r / 255.0f, tmp.g / 255.0f, tmp.b / 255.0f, tmp.a / 255.0f);
-		memcpy(&gl->colors[4 * (cmd->baseVertex + i)], &color, sizeof(color));
+
+        siVec4 color = SI_VEC4(tmp.r / 255.0f, tmp.g / 255.0f, tmp.b / 255.0f, tmp.a / 255.0f);
+		gl->colors[cmd->baseVertex + i] = color;
 	}
 	gl->gradientLen = 0;
 }
@@ -1527,66 +1650,6 @@ siMatrix rglMatrixIdentity(void) {
 		}
 	};
 }
-
-siMatrix rglMatrixMultiply(float left[16], float right[16]) {
-	return (siMatrix) {
-		{
-			left[0] * right[0] + left[1] * right[4] + left[2] * right[8] + left[3] * right[12],
-			left[0] * right[1] + left[1] * right[5] + left[2] * right[9] + left[3] * right[13],
-			left[0] * right[2] + left[1] * right[6] + left[2] * right[10] + left[3] * right[14],
-			left[0] * right[3] + left[1] * right[7] + left[2] * right[11] + left[3] * right[15],
-			left[4] * right[0] + left[5] * right[4] + left[6] * right[8] + left[7] * right[12],
-			left[4] * right[1] + left[5] * right[5] + left[6] * right[9] + left[7] * right[13],
-			left[4] * right[2] + left[5] * right[6] + left[6] * right[10] + left[7] * right[14],
-			left[4] * right[3] + left[5] * right[7] + left[6] * right[11] + left[7] * right[15],
-			left[8] * right[0] + left[9] * right[4] + left[10] * right[8] + left[11] * right[12],
-			left[8] * right[1] + left[9] * right[5] + left[10] * right[9] + left[11] * right[13],
-			left[8] * right[2] + left[9] * right[6] + left[10] * right[10] + left[11] * right[14],
-			left[8] * right[3] + left[9] * right[7] + left[10] * right[11] + left[11] * right[15],
-			left[12] * right[0] + left[13] * right[4] + left[14] * right[8] + left[15] * right[12],
-			left[12] * right[1] + left[13] * right[5] + left[14] * right[9] + left[15] * right[13],
-			left[12] * right[2] + left[13] * right[6] + left[14] * right[10] + left[15] * right[14],
-			left[12] * right[3] + left[13] * right[7] + left[14] * right[11] + left[15] * right[15]
-		}
-	};
-}
-
-#ifndef PI
-	#define PI 3.14159265358979323846f
-#endif
-#define DEG2RAD (PI/180.0f)
-
-void rglOrtho(siMatrix* matrix, double left, double right, double bottom, double top, double znear, double zfar) {
-	float rl = (float)(right - left);
-	float tb = (float)(top - bottom);
-	float fn = (float)(zfar - znear);
-
-	float tx = -((float)(right + left) / rl);
-	float ty = -((float)(top + bottom) / tb);
-	float tz = -((float)(zfar + znear) / fn);
-
-	float matOrtho[16] =
-			{
-				2.0f / rl,   0.0f,          0.0f,    	  0.0f,
-				0.0f,        2.0 / tb,      0.0f,         0.0f,
-				0.0f,        0.0f,          -2.0f / fn,   0.0f,
-				tx,          ty,            tz,           1.0f
-			};
-
-	*matrix = rglMatrixMultiply(matrix->m, matOrtho);
-}
-
-void rglTranslatef(siWindow* win, float x, float y, float z) {
-	siWinRenderingCtxOpenGL* gl = &win->render.opengl;
-	f32 matTranslation[16] = {
-		1.0f, 0.0f, 0.0f, 0.0f,
-		0.0f, 1.0f, 0.0f, 0.0f,
-		0.0f, 0.0f, 0.0f, 1.0f,
-		x,    y,    z,    1.0f
-	};
-
-	gl->matrices[gl->drawCounter] = rglMatrixMultiply(matTranslation, gl->matrices[gl->drawCounter].m);
-}
 #endif
 
 #endif
@@ -1610,9 +1673,19 @@ siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
 	SI_WINDOW_MINIMIZED       = SI_BIT(4),
 	SI_WINDOW_MAXIMIZED       = SI_BIT(5),
 	SI_WINDOW_RENDERING_CPU   = SI_BIT(7),
-	SI_WINDOW_RENDERING_OPENGL   = SI_BIT(8),
-	SI_WINDOW_RENDERING_NULL  = SI_BIT(9),
 #endif
+
+    if (arg & SI_WINDOW_OPTIMAL_SIZE) {
+        SI_ASSERT_MSG(size.width == 0 && size.height == 0, "The selected resolution must be set to zeros beforehand to use 'SI_WINDOW_OPTIMAL_SIZE'.");
+        siArea area = siapp_screenGetCurrentSize();
+        size.width = area.width / 2;
+        size.height = area.height / 2;
+    }
+    if (arg & SI_WINDOW_CENTER) {
+        siArea area = siapp_screenGetCurrentSize();
+        pos.x = (area.width - size.width) / 2;
+        pos.y = (area.height - size.height) / 2;
+    }
 
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	siAllocator* stack = si_allocatorMakeStack(SI_KILO(4) * sizeof(u16));
@@ -1645,17 +1718,6 @@ siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
 		WS_CAPTION | WS_SYSMENU | WS_BORDER |
 		WS_SIZEBOX | WS_MAXIMIZEBOX | WS_MINIMIZEBOX;
 
-	if (arg & SI_WINDOW_OPTIMAL_SIZE) {
-		SI_ASSERT_MSG(size.width == 0 && size.height == 0, "The selected size must be set to zero beforehand to use 'SI_WINDOW_OPTIMAL_SIZE'.");
-		siArea area = siapp_screenGetCurrentSize();
-		size.width = area.width / 2;
-		size.height = area.height / 2;
-	}
-	if (arg & SI_WINDOW_CENTER) {
-		siArea area = siapp_screenGetCurrentSize();
-		pos.x = (area.width - size.width) / 2;
-		pos.y = (area.height - size.height) / 2;
-	}
 
 	RECT adjustRect = {pos.x, pos.y, size.width, size.height};
 	AdjustWindowRect(&adjustRect, windowStyle, 0);
@@ -1674,10 +1736,37 @@ siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
 
 	win->hwnd = hwnd;
 	win->hdc = GetDC(hwnd);
+#elif defined(SIAPP_PLATFORM_API_X11)
+    siapp__x11CheckStartup();
+    win->display = XOpenDisplay(nil);
+    SIAPP_ERROR_CHECK(win->display == nil, "XOpenDisplay(nil)");
+
+    i32 screen = XDefaultScreen(win->display);
+    XSetWindowAttributes wa;
+    wa.event_mask =
+        KeyPressMask | KeyReleaseMask | ButtonPressMask | ButtonReleaseMask |
+        PointerMotionMask | StructureNotifyMask | FocusChangeMask;
+
+    win->hwnd = XCreateWindow(
+        win->display, XDefaultRootWindow(win->display),
+        pos.x, pos.y, size.width, size.height, 0, XDefaultDepth(win->display, screen), InputOutput,
+	    XDefaultVisual(win->display, screen),
+        CWEventMask, &wa
+    );
+
+    XStoreName(win->display, win->hwnd, name);
+    XChangeProperty(
+        win->display, win->hwnd, NET_WM_NAME, UTF8_STRING,
+        8, PropModeReplace, (siByte*)name, si_cstrLen(name)
+    );
+    XSetWMProtocols(win->display, win->hwnd, (Atom*)&WM_DELETE_WINDOW, 1);
+
+    SI_WINDOWS_NUM += 1;
+    SI_ROOT_WINDOW = win;
+    win->__x11BlankCursor = 0;
 #endif
 	win->alloc = alloc;
 	win->arg = arg;
-	win->maxDrawCount = maxDrawCount;
 	win->scaleFactor = SI_VEC2(1, 1);
 	win->originalSize = size;
 	win->cursor = SI_CURSOR_DEFAULT;
@@ -1685,9 +1774,13 @@ siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
 	win->textColor.vec4 = SI_VEC4(1, 1, 1, 1);
 	win->imageColor = SI_VEC4(1, 1, 1, 1);
 
+    maxTexRes.width += 1;
+    maxTexRes.height += 1;
+    maxTexCount = si_max(1, maxTexCount);
+
 	switch (arg & SI_WINDOW_RENDERING_BITS) {
 		case SI_WINDOW_RENDERING_OPENGL: {
-			siapp_windowOpenGLInit(win, size, maxTexCount, maxTexRes);
+			siapp_windowOpenGLInit(win, maxDrawCount, maxTexCount, maxTexRes);
 			break;
 		}
 		case SI_WINDOW_RENDERING_CPU: {
@@ -1695,14 +1788,15 @@ siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
 			break;
 		}
 		default: {
-			win->atlas = siapp_textureAtlasMake(win, maxTexRes, maxTexCount + 1, SI_RESIZE_DEFAULT);
+			win->atlas = siapp_textureAtlasMake(win, maxTexRes, maxTexCount, SI_RESIZE_DEFAULT);
 		}
 	}
 
 	siapp_windowShow(win, (arg & SI_WINDOW_HIDDEN) == 0);
+
 	return win;
 }
-void siapp_windowUpdate(siWindow* win, b32 await) {
+const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 	SI_ASSERT_NOT_NULL(win);
 
 	siWindowEvent* out = &win->e;
@@ -1732,6 +1826,7 @@ void siapp_windowUpdate(siWindow* win, b32 await) {
 		}
 	}
 
+#if defined(SIAPP_PLATFORM_API_WIN32)
 	{
 		//if (win->keyListenerEnabled) {
 		GetKeyState(VK_SHIFT);
@@ -1756,11 +1851,177 @@ void siapp_windowUpdate(siWindow* win, b32 await) {
 		TranslateMessage(&msg);
 		DispatchMessageW(&msg);
 	}
+#elif defined (SIAPP_PLATFORM_API_X11)
+    SI_ROOT_WINDOW = win;
+
+
+    XEvent event;
+	if (await) {
+		/* blocks until next event is recv'd, but DOES NOT REMOVE said event from queue so that
+		it will still be caught during the while loop below */
+		XPeekEvent(win->display, &event);
+	}
+
+    #define SI_CHECK_WIN(struct, win) SI_STOPIF(struct.window != win, break)
+
+    while (XEventsQueued(win->display, QueuedAlready) + XEventsQueued(win->display, QueuedAfterReading)) {
+        XNextEvent(win->display, &event);
+
+        switch (event.type) {
+            case ClientMessage: {
+                SI_CHECK_WIN(event.xclient, win->hwnd);
+                out->type.isClosed = (event.xclient.data.l[0] == (long)WM_DELETE_WINDOW);
+                break;
+            }
+            case KeyPress: {
+                SI_CHECK_WIN(event.xkey, win->hwnd);
+                KeySym sym = XLookupKeysym(&event.xkey, 0);
+                siKeyType key = siapp_osKeyToSili(sym);
+
+                out->type.keyPress = true;
+                out->curKey = key;
+
+                siKeyState* keyState = &out->keys[key];
+                keyState->clicked = !keyState->pressed;
+                keyState->pressed = true;
+                keyState->released = false;
+
+                if (keyState->clicked) {
+                    SK_TO_INT(out->keys[SK__EVENT]) |= SI_BIT(7);
+                    out->__private.keyCache[out->__private.keyCacheLen % 16] = key;
+                    out->__private.keyCacheLen += 1;
+                }
+#if 0
+                if (isDown && !isE1 && !isE0) {
+                    u16 buf[4];
+                    i32 numChars = ToUnicode(vk, scanCode, __win32KBState, buf, countof(buf) - 1, 0);
+                    SI_STOPIF(numChars == 0, break);
+
+                    usize len = e->charBufferLen;
+                    usize addedLen;
+
+                    siAllocator tmp = si_allocatorMakeTmp(&e->charBuffer[len], sizeof(e->charBuffer) - len);
+                    si_utf16ToUtf8Str(&tmp, buf, &addedLen);
+                    e->charBufferLen += addedLen;
+                }
+#endif
+                break;
+            }
+            case KeyRelease: {
+                SI_CHECK_WIN(event.xkey, win->hwnd);
+                if (XEventsQueued(win->display, QueuedAfterReading)) { /* get next event if there is one*/
+	    			XEvent next;
+	    		    XPeekEvent(win->display, &next);
+
+			    	if (event.xkey.time == next.xkey.time
+                        && event.xkey.keycode == next.xkey.keycode) {
+                        break;
+                    }
+		    	}
+
+                KeySym sym = XLookupKeysym(&event.xkey, 0);
+                siKeyType key = siapp_osKeyToSili(sym);
+
+                out->type.keyRelease = true;
+                out->curKey = key;
+
+                siKeyState* keyState = &out->keys[key];
+                keyState->clicked = false;
+                keyState->pressed = false;
+                keyState->released = true;
+
+                SK_TO_INT(out->keys[SK__EVENT]) |= SI_BIT(7);
+                out->__private.keyCache[out->__private.keyCacheLen % 16] = key;
+                out->__private.keyCacheLen += 1;
+                break;
+            }
+            case MotionNotify: {
+                SI_CHECK_WIN(event.xmotion, win->hwnd);
+                out->type.mouseMove = true;
+
+                out->mouse = SI_POINT(event.xmotion.x, event.xmotion.y);
+                out->mouseRoot = SI_POINT(event.xmotion.x_root, event.xmotion.y_root);
+                break;
+            }
+            case ButtonPress: {
+                SI_CHECK_WIN(event.xbutton, win->hwnd);
+
+                i32 button = event.xbutton.button;
+                if (si_between(button, 4, 7)) { // Mouse wheel up/down/left/right
+                    out->type.mouseScroll = true;
+                    out->mouseWheel = button - 3;
+                    out->mouse = SI_POINT(event.xbutton.x, event.xbutton.y);
+                    out->mouseRoot = SI_POINT(event.xbutton.x_root, event.xbutton.y_root);
+                    break;
+                }
+                else if (button > 7) { button -= 4; } // X1/X2 buttons
+
+                siapp__mouseButtonPress(out, button);
+                out->type.mousePress = true;
+                out->mouse = SI_POINT(event.xbutton.x, event.xbutton.y);
+                out->mouseRoot = SI_POINT(event.xbutton.x_root, event.xbutton.y_root);
+                break;
+            }
+            case ButtonRelease: {
+                SI_CHECK_WIN(event.xbutton, win->hwnd);
+
+                i32 button = event.xbutton.button;
+                if (si_between(button, 4, 7)) { // Mouse wheel up/down/left/right
+                    break;
+                }
+                else if (button > 7) { button -= 4; } // X1/X2 buttons
+
+                siapp__mouseButtonRelease(out, button);
+                out->type.mouseRelease = true;
+                out->mouse = SI_POINT(event.xbutton.x, event.xbutton.y);
+                out->mouseRoot = SI_POINT(event.xbutton.x_root, event.xbutton.y_root);
+                break;
+            }
+            case ConfigureNotify: {
+                SI_CHECK_WIN(event.xconfigure, win->hwnd);
+                siPoint pos = SI_POINT(event.xconfigure.x, event.xconfigure.y);
+
+                if (SI_CSTR_U64(&pos) != 0 && !si_pointCmp(out->windowPos, pos)) {
+                    out->type.windowMove = true;
+                    out->windowPos = pos;
+                }
+                else {
+                    siapp__resizeWindow(win, event.xconfigure.width, event.xconfigure.height);
+                }
+
+                break;
+            }
+            case FocusIn: {
+                SI_CHECK_WIN(event.xfocus, win->hwnd);
+                out->type.windowFocusChange = true;
+                out->focus = true;
+                break;
+            }
+            case FocusOut: {
+                SI_CHECK_WIN(event.xfocus, win->hwnd);
+                out->type.windowFocusChange = true;
+                out->focus = false;
+                break;
+            }
+            case EnterNotify: {
+                out->mouseInside = true;
+                break;
+            }
+            case LeaveNotify: {
+                out->mouseInside = false;
+                break;
+            }
+        }
+    }
+    #undef SI_CHECK_WIN
+#endif
 
 	f64 prevTime = out->curTime;
-	f64 curTime = si_timeNowF64();
+	f64 curTime = si_clock();
 	out->curTime = curTime;
 	out->timeDelta = curTime - prevTime;
+
+    return out;
 }
 void siapp_windowRender(siWindow* win) {
 	SI_ASSERT_NOT_NULL(win);
@@ -1789,11 +2050,20 @@ void siapp_windowSwapBuffers(const siWindow* win) {
 
 	switch (win->arg & SI_WINDOW_RENDERING_BITS) {
 		case SI_WINDOW_RENDERING_OPENGL: {
-			SwapBuffers(win->hdc);
+        #if defined(SIAPP_PLATFORM_API_WIN32)
+            SwapBuffers(win->hdc);
+        #elif defined(SIAPP_PLATFORM_API_X11)
+            glXSwapBuffers(win->display, win->hwnd);
+        #endif
+
 			siapp_windowClear(win);
 			break;
 		}
-		case SI_WINDOW_RENDERING_CPU: SI_PANIC();
+        default: {
+        #if defined(SIAPP_PLATFORM_API_X11)
+            XFlush(win->display);
+        #endif
+        }
 	}
 }
 void siapp_windowClose(siWindow* win) {
@@ -1803,8 +2073,28 @@ void siapp_windowClose(siWindow* win) {
 		case SI_WINDOW_RENDERING_CPU: SI_PANIC_MSG("Other rendering types aren't supported as of now.");
 	}
 
+#if defined(SIAPP_PLATFORM_API_WIN32)
 	ReleaseDC(win->hwnd, win->hdc);
 	DestroyWindow(win->hwnd);
+#elif defined(SIAPP_PLATFORM_API_X11)
+    SI_STOPIF(win->__x11BlankCursor, XFreeCursor(win->display, win->__x11BlankCursor));
+    SI_STOPIF(win->hwnd, XDestroyWindow(win->display, win->hwnd));
+    SI_STOPIF(win->display, XCloseDisplay(win->display));
+    SI_WINDOWS_NUM -= 1;
+    win->__x11BlankCursor = 0;
+
+    if (SI_WINDOWS_NUM == 0) {
+        for_range (i, 0, countof(SI_X11_CURSORS)) {
+            if (SI_X11_CURSORS[i] != 0) {
+                XFreeCursor(SI_X11_DISPLAY, SI_X11_CURSORS[i]);
+                SI_X11_CURSORS[i] = 0;
+            }
+        }
+
+        XCloseDisplay(SI_X11_DISPLAY);
+        SI_X11_DISPLAY = nil;
+    }
+#endif
 }
 
 F_TRAITS(inline)
@@ -1816,7 +2106,16 @@ b32 siapp_windowIsRunning(const siWindow* win) {
 F_TRAITS(inline)
 void siapp_windowShow(const siWindow* win, b32 show) {
 	SI_ASSERT_NOT_NULL(win);
-	ShowWindow(win->hwnd, show);
+#if defined(SIAPP_PLATFORM_API_WIN32)
+    ShowWindow(win->hwnd, show);
+#elif defined(SIAPP_PLATFORM_API_X11)
+    if (show) {
+        XMapWindow(win->display, win->hwnd);
+    }
+    else {
+        XUnmapWindow(win->display, win->hwnd);
+    }
+#endif
 }
 
 
@@ -1853,9 +2152,11 @@ void siapp_windowCursorSet(siWindow* win, siCursorType cursor) {
 	SI_ASSERT_NOT_NULL(win);
 	SI_ASSERT(si_between(cursor, INT32_MIN, SI_CURSOR_COUNT));
 
-	LPCSTR cursorName = nil;
-	b32 isDif = cursor != siapp_windowCursorGet(win) && !win->cursorSet;
-	win->cursorSet = true;
+    b32 isDif = cursor != siapp_windowCursorGet(win) && !win->cursorSet;
+    win->cursorSet = true;
+
+#if defined(SIAPP_PLATFORM_API_WIN32)
+    LPCSTR cursorName = nil;
 
 	switch (cursor * isDif) {
 		case 0: return ;
@@ -1872,15 +2173,34 @@ void siapp_windowCursorSet(siWindow* win, siCursorType cursor) {
 			return ;
 		}
 	}
+    SetClassLongPtr(win->hwnd, GCLP_HCURSOR, (LONG_PTR)cursorName);
+    SetCursor(LoadCursorA(nil, cursorName));
+#else
+    SI_STOPIF(!isDif, return);
+
+    Cursor cursorVal;
+    if (cursor < 0) { // is custom
+        cursorVal = -cursor;
+    }
+    else {
+        Cursor* ptr = &SI_X11_CURSORS[cursor];
+        if (*ptr == 0) {
+            siapp__x11CheckStartup();
+            static i32 xCursors[countof(SI_X11_CURSORS) + 1] = {0, XC_left_ptr, XC_hand1, XC_sb_h_double_arrow, XC_xterm};
+            *ptr = XCreateFontCursor(SI_X11_DISPLAY, xCursors[cursor]);
+        }
+        cursorVal = *ptr;
+    }
+    XDefineCursor(win->display, win->hwnd, cursorVal);
+#endif
 	win->cursor = cursor;
 
-	SetClassLongPtr(win->hwnd, GCLP_HCURSOR, (LONG_PTR)cursorName);
-	SetCursor(LoadCursorA(nil, cursorName));
 }
 siCursorType siapp_cursorMake(siByte* data, siArea res, u32 channels) {
 	SI_ASSERT_NOT_NULL(data);
 	SI_ASSERT(si_betweenu(channels, 1, 4));
 
+#if defined(SIAPP_PLATFORM_API_WIN32)
 	BITMAPV5HEADER bi = {0};
 	bi.bV5Size        = sizeof(bi);
 	bi.bV5Width       = res.width;
@@ -1930,17 +2250,57 @@ siCursorType siapp_cursorMake(siByte* data, siArea res, u32 channels) {
 	icon.hbmColor = color;
 
 	HCURSOR handle = CreateIconIndirect(&icon);
-
 	DeleteObject(color);
 	DeleteObject(mask);
 
-	return -*(i32*)&handle;
+    return -*(i32*)&handle;
+#else
+    XcursorImage* native = XcursorImageCreate(res.width, res.height);
+    native->xhot = 0;
+    native->yhot = 0;
+
+
+    u8* source = data;
+    XcursorPixel* target = native->pixels;
+
+	for_range (i, 0, res.width * res.height) {
+        u8 alpha;
+        switch (channels) {
+            case 4: {
+                alpha = source[3];
+                break;
+            }
+            case 3: {
+                alpha = 255;
+                break;
+            }
+            default: SI_PANIC_MSG("Other channel types aren't supported as of now.");
+        }
+
+
+        *target = (alpha << 24)
+            | (((source[0] * alpha) / 255) << 16)
+            | (((source[1] * alpha) / 255) <<  8)
+            | (((source[2] * alpha) / 255) <<  0);
+
+        target += 1;
+        source += 4;
+    }
+
+    Cursor handle = XcursorImageLoadCursor(SI_ROOT_WINDOW->display, native);
+	XcursorImageDestroy(native);
+    return -(i64)handle;
+#endif
 }
 F_TRAITS(inline)
 void siapp_cursorFree(siCursorType cursor) {
 	SI_ASSERT_MSG(cursor < 0, "Only custom-made cursors need to be freed.");
 	usize handle = -cursor;
+#if defined(SIAPP_PLATFORM_API_WIN32)
 	DestroyCursor((HCURSOR)handle);
+#else
+    XFreeCursor(SI_ROOT_WINDOW->display, handle);
+#endif
 }
 
 
@@ -1978,6 +2338,7 @@ void siapp_windowDragAreaMake(siWindow* win, siRect rect, siDropEvent* out) {
 	SI_ASSERT_NOT_NULL(win);
 	SI_ASSERT_NOT_NULL(out);
 
+#if defined(SIAPP_PLATFORM_API_WIN32)
 	u16 buf[64];
 	GetClassNameW(win->hwnd, buf, countof(buf));
 
@@ -2010,37 +2371,69 @@ void siapp_windowDragAreaMake(siWindow* win, siRect rect, siDropEvent* out) {
 
 	OleInitialize(nil);
 	RegisterDragDrop(subHwnd, (LPDROPTARGET)&out->target);
+#endif
 }
 void siapp_windowDragAreaEnd(siDropEvent event) {
+#if defined(SIAPP_PLATFORM_API_WIN32)
 	RevokeDragDrop(event.subHwnd);
 	RemoveWindowSubclass(event.subHwnd, &WndProcDropFile, 0);
 	OleUninitialize();
+#endif
 }
 
 
 F_TRAITS(inline)
 siArea siapp_screenGetCurrentSize(void) {
+#if defined(SIAPP_PLATFORM_API_WIN32)
 	DEVMODEW mode = {0};
 	EnumDisplaySettingsW(nil, ENUM_CURRENT_SETTINGS, &mode);
 	return SI_AREA(mode.dmPelsWidth, mode.dmPelsHeight);
+#else
+    siapp__x11CheckStartup();
+    Screen* size = DefaultScreenOfDisplay(SI_X11_DISPLAY);
+    return SI_AREA(size->width, size->height);
+#endif
 }
 F_TRAITS(inline)
 siArea siapp_screenGetAvailableResolution(usize index) {
+#if defined(SIAPP_PLATFORM_API_WIN32)
 	DEVMODEW mode = {0};
 	i32 res = EnumDisplaySettingsW(nil, index, &mode);
 	SI_STOPIF(res == 0, return SI_AREA(-1, -1));
 
 	return SI_AREA(mode.dmPelsWidth, mode.dmPelsHeight);
+#endif
 }
 
 
 F_TRAITS(inline)
 void siapp_mouseShow(b32 show) {
+#if defined(SIAPP_PLATFORM_API_WIN32)
 	ShowCursor(show);
+#else
+    siWindow* win = SI_ROOT_WINDOW;
+
+    if (show) {
+        siCursorType cursor = siapp_windowCursorGet(win);
+        Cursor cursorVal = (cursor < 0)
+            ? -cursor
+            : SI_X11_CURSORS[cursor - 1];
+        XDefineCursor(win->display, win->hwnd, cursorVal);
+    }
+    else {
+        if (win->__x11BlankCursor == 0) {
+            siByte data[] = {0xFF, 0xFF, 0xFF, 0x00};
+            win->__x11BlankCursor = -siapp_cursorMake(data, SI_AREA(1, 1), 4);
+        }
+
+        XDefineCursor(win->display, win->hwnd, win->__x11BlankCursor);
+    }
+#endif
 }
 
-
+#include <limits.h>
 usize siapp_clipboardTextGet(char* outBuffer, usize capacity) {
+#if defined(SIAPP_PLATFORM_API_WIN32)
 	b32 res = OpenClipboard(nil);
 	SI_STOPIF(!res, return 0);
 
@@ -2055,10 +2448,47 @@ usize siapp_clipboardTextGet(char* outBuffer, usize capacity) {
 	CloseClipboard();
 
 	return len;
+#elif defined (SIAPP_PLATFORM_API_X11)
+    siapp__x11CheckStartup();
+
+    Atom type;
+    int di;
+    unsigned long size, dul;
+    siByte* allocatedStr = nil;
+
+    siWindow* win = SI_ROOT_WINDOW;
+    XConvertSelection(
+        win->display, CLIPBOARD, UTF8_STRING, XSEL_DATA, win->hwnd, CurrentTime
+    );
+
+    XEvent event;
+	do {
+		XNextEvent(win->display, &event);
+	} while (event.type != SelectionNotify || event.xselection.selection != CLIPBOARD);
+
+    XGetWindowProperty(
+        SI_X11_DISPLAY, win->hwnd, XSEL_DATA, 0, 0, False, AnyPropertyType,
+        &type, &di, &dul, &size, &allocatedStr
+    );
+    XFree(allocatedStr);
+
+    usize len = si_min(capacity - 1, size);
+    XGetWindowProperty(
+        SI_X11_DISPLAY, win->hwnd, XSEL_DATA, 0, len, False, AnyPropertyType,
+        &type, &di, &dul, &size, &allocatedStr
+    );
+
+    memcpy(outBuffer, allocatedStr, len);
+    outBuffer[len] = '\0';
+    XFree(allocatedStr);
+
+    return len;
+#endif
 }
 b32 siapp_clipboardTextSet(cstring text) {
+#if defined(SIAPP_PLATFORM_API_WIN32)
 	usize len;
-	siAllocator* stack = si_allocatorMakeStack(SI_KILO(4));
+	siAllocator* stack = si_allocatorMakeStack(SI_KILO(8));
 	siUtf16String str = si_utf8ToUtf16Str(stack, text, &len);
 
 	b32 res = OpenClipboard(nil);
@@ -2078,24 +2508,153 @@ b32 siapp_clipboardTextSet(cstring text) {
 	CloseClipboard();
 
 	return status;
+#elif defined (SIAPP_PLATFORM_API_X11)
+    siapp__x11CheckStartup();
+
+    siWindow* win = SI_ROOT_WINDOW;
+    XSetSelectionOwner((Display*)win->display, CLIPBOARD, (Window)win->hwnd, CurrentTime);
+
+    XConvertSelection((Display*)win->display, CLIPBOARD_MANAGER, SAVE_TARGETS, None, (Window)win->hwnd, CurrentTime);
+
+    for (;;) {
+        XEvent event;
+
+        XNextEvent((Display*)win->display, &event);
+        if (event.type != SelectionRequest)
+			return false;
+
+		const XSelectionRequestEvent* request = &event.xselectionrequest;
+
+		XEvent reply = { SelectionNotify };
+
+		char* selectionString = NULL;
+		const Atom formats[] = { UTF8_STRING, XA_STRING };
+		const i32 formatCount = sizeof(formats) / sizeof(formats[0]);
+
+		selectionString = (char*)text;
+
+		if (request->target == TARGETS) {
+			const Atom targets[] = { TARGETS,
+									MULTIPLE,
+									UTF8_STRING,
+									XA_STRING };
+
+			XChangeProperty((Display*)win->display,
+							request->requestor,
+							request->property,
+							4,
+							32,
+							PropModeReplace,
+							(u8*) targets,
+							sizeof(targets) / sizeof(targets[0]));
+
+			reply.xselection.property = request->property;
+		}
+
+		if (request->target == MULTIPLE) {
+
+			Atom* targets;
+
+			Atom actualType;
+			i32 actualFormat;
+			u64 count, bytesAfter;
+
+			XGetWindowProperty((Display*)win->display, request->requestor, request->property, 0, LONG_MAX, False, ATOM_PAIR,  &actualType, &actualFormat, &count, &bytesAfter, (u8**) &targets);
+
+			u64 i;
+			for (i = 0;  i < count;  i += 2) {
+				i32 j;
+
+				for (j = 0;  j < formatCount;  j++) {
+					if (targets[i] == formats[j])
+						break;
+				}
+
+				if (j < formatCount)
+				{
+					XChangeProperty((Display*)win->display,
+									request->requestor,
+									targets[i + 1],
+									targets[i],
+									8,
+									PropModeReplace,
+									(u8 *) selectionString,
+									si_stringLen(text));
+				}
+				else
+					targets[i + 1] = None;
+			}
+
+			XChangeProperty((Display*)win->display,
+							request->requestor,
+							request->property,
+							ATOM_PAIR,
+							32,
+							PropModeReplace,
+							(u8*) targets,
+							count);
+
+			XFree(targets);
+
+			reply.xselection.property = request->property;
+		}
+
+		reply.xselection.display = request->display;
+		reply.xselection.requestor = request->requestor;
+		reply.xselection.selection = request->selection;
+		reply.xselection.target = request->target;
+		reply.xselection.time = request->time;
+
+		XSendEvent((Display*)win->display, request->requestor, False, 0, &reply);
+	}
+    return true;
+#endif
 }
 usize siapp_clipboardTextLen(void) {
+#if defined(SIAPP_PLATFORM_API_WIN32)
 	b32 res = OpenClipboard(nil);
 	SI_STOPIF(!res, return 0);
 
 	HANDLE hData = GetClipboardData(CF_UNICODETEXT);
 	SI_STOPIF(hData == nil, CloseClipboard(); return 0);
 
-	usize len = si_cstrU16Len(GlobalLock(hData));
+	usize len = GlobalSize(GlobalLock(hData));
 
 	GlobalUnlock(hData);
 	CloseClipboard();
 
 	return len;
+#else
+    siapp__x11CheckStartup();
+
+    Atom type;
+    int di;
+    unsigned long size, dul;
+    siByte* allocatedStr = nil;
+
+    siWindow* win = SI_ROOT_WINDOW;
+    XConvertSelection(
+        win->display, CLIPBOARD, UTF8_STRING, XSEL_DATA, win->hwnd, CurrentTime
+    );
+
+    XEvent event;
+	do {
+		XNextEvent(win->display, &event);
+	} while (event.type != SelectionNotify || event.xselection.selection != CLIPBOARD);
+
+    XGetWindowProperty(
+        SI_X11_DISPLAY, win->hwnd, XSEL_DATA, 0, 0, False, AnyPropertyType,
+        &type, &di, &dul, &size, &allocatedStr
+    );
+    XFree(allocatedStr);
+
+    return size;
+#endif
 }
 
 
 siDropHandle siapp_dropEventHandle(siDropEvent event) {
+#if defined(SIAPP_PLATFORM_API_WIN32)
 	FORMATETC fmte = {CF_HDROP, nil, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
 	STGMEDIUM stgm;
 	IDataObject* pDataObj = event.pDataObj;
@@ -2111,15 +2670,17 @@ siDropHandle siapp_dropEventHandle(siDropEvent event) {
 
 end:
 	return res;
+#endif
 }
 b32 siapp_dropEventPollEntry(siDropHandle* handle, siDropEntry* entry) {
+#if defined(SIAPP_PLATFORM_API_WIN32)
 	if (handle->curIndex >= handle->len) {
 		ReleaseStgMedium(&handle->stgm);
 		return false;
 	}
 
-	siAllocator out = si_allocatorMakeTmp(entry->path, 256);
-	siAllocator* stack = si_allocatorMakeStack(SI_KILO(1));
+	siAllocator out = si_allocatorMakeTmp(entry->path, sizeof(entry->path));
+	siAllocator* stack = si_allocatorMakeStack(SI_KILO(4));
 	u16* curPtr = (u16*)si_allocatorCurPtr(stack);
 
 	DragQueryFileW(handle->stgm.hGlobal, handle->curIndex, curPtr, 256);
@@ -2127,6 +2688,7 @@ b32 siapp_dropEventPollEntry(siDropHandle* handle, siDropEntry* entry) {
 	handle->curIndex += 1;
 
 	return true;
+#endif
 }
 F_TRAITS(inline)
 void siapp_dropEventEnd(siDropEvent* event) {
@@ -2136,91 +2698,196 @@ void siapp_dropEventEnd(siDropEvent* event) {
 
 F_TRAITS(inline)
 siKeyType siapp_osKeyToSili(i32 key) {
-	if (si_between(key, 'A', 'Z') || si_between(key, '0', '9')) {
-		return key;
-	}
+#if defined(SIAPP_PLATFORM_API_WIN32)
+    if (si_between(key, 'A', 'Z') || si_between(key, '0', '9')) {
+        return key;
+    }
+#elif defined (SIAPP_PLATFORM_API_X11)
+    if (si_between(key, '0', '9')) {
+        return key;
+    }
+    if (si_between(key, 'a', 'z')) {
+        return key - 32;
+    }
+#endif
 
 	switch (key) {
-		case VK_ESCAPE: return SK_ESC;
+#if defined(SIAPP_PLATFORM_API_WIN32)
+		case VK_ESCAPE:         return SK_ESC;
 
-		case VK_LCONTROL: return SK_CTRL_L;
-		case VK_LSHIFT:   return SK_SHIFT_L;
-		case VK_LMENU:    return SK_ALT_L;
-		case VK_LWIN:     return SK_SYSTEM_L;
+		case VK_LCONTROL:       return SK_CTRL_L;
+		case VK_LSHIFT:         return SK_SHIFT_L;
+		case VK_LMENU:          return SK_ALT_L;
+		case VK_LWIN:           return SK_SYSTEM_L;
 
-		case VK_RCONTROL: return SK_CTRL_R;
-		case VK_RSHIFT:   return SK_SHIFT_R;
-		case VK_RMENU:    return SK_ALT_R;
-		case VK_RWIN:     return SK_SYSTEM_R;
+		case VK_RCONTROL:       return SK_CTRL_R;
+		case VK_RSHIFT:         return SK_SHIFT_R;
+		case VK_RMENU:          return SK_ALT_R;
+		case VK_RWIN:           return SK_SYSTEM_R;
 
-		case VK_CAPITAL: return SK_CAPS_LOCK;
-		case VK_SCROLL:  return SK_SCROLL_LOCK;
-		case VK_NUMLOCK: return SK_NUM_LOCK;
+		case VK_CAPITAL:        return SK_CAPS_LOCK;
+		case VK_SCROLL:         return SK_SCROLL_LOCK;
+		case VK_NUMLOCK:        return SK_NUM_LOCK;
 
-		case VK_PAUSE:      return SK_PAUSE;
-		case VK_MENU:       return SK_MENU;
-		case VK_OEM_4:      return SK_BRACKET_L;
-		case VK_OEM_6:      return SK_BRACKET_R;
-		case VK_OEM_1:      return SK_SEMICOLON;
-		case VK_OEM_COMMA:  return SK_COMMA;
-		case VK_OEM_PERIOD: return SK_PERIOD;
-		case VK_OEM_7:      return SK_QUOTE;
-		case VK_OEM_2:      return SK_SLASH;
-		case VK_OEM_5:      return SK_BACKSLASH;
-		case VK_OEM_3:      return SK_GRAVE;
-		case VK_OEM_PLUS:   return SK_EQUALS;
-		case VK_OEM_MINUS:  return SK_MINUS;
+		case VK_PAUSE:          return SK_PAUSE;
+		case VK_MENU:           return SK_MENU;
+		case VK_OEM_4:          return SK_BRACKET_L;
+		case VK_OEM_6:          return SK_BRACKET_R;
+		case VK_OEM_1:          return SK_SEMICOLON;
+		case VK_OEM_COMMA:      return SK_COMMA;
+		case VK_OEM_PERIOD:     return SK_PERIOD;
+		case VK_OEM_7:          return SK_QUOTE;
+		case VK_OEM_2:          return SK_SLASH;
+		case VK_OEM_5:          return SK_BACKSLASH;
+		case VK_OEM_3:          return SK_GRAVE;
+		case VK_OEM_PLUS:       return SK_EQUALS;
+		case VK_OEM_MINUS:      return SK_MINUS;
 
-		case VK_SPACE:  return SK_SPACE;
-		case VK_RETURN: return SK_RETURN;
-		case VK_BACK:   return SK_BACKSPACE;
-		case VK_TAB:    return SK_TAB;
+		case VK_SPACE:          return SK_SPACE;
+		case VK_RETURN:         return SK_RETURN;
+		case VK_BACK:           return SK_BACKSPACE;
+		case VK_TAB:            return SK_TAB;
 
-		case VK_PRIOR:  return SK_PAGE_UP;
-		case VK_NEXT:   return SK_PAGE_DOWN;
-		case VK_END:    return SK_END;
-		case VK_HOME:   return SK_HOME;
-		case VK_INSERT: return SK_INSERT;
-		case VK_DELETE: return SK_DELETE;
-		case VK_CLEAR:  return SK_CLEAR;
+		case VK_PRIOR:          return SK_PAGE_UP;
+		case VK_NEXT:           return SK_PAGE_DOWN;
+		case VK_END:            return SK_END;
+		case VK_HOME:           return SK_HOME;
+		case VK_INSERT:         return SK_INSERT;
+		case VK_DELETE:         return SK_DELETE;
+		case VK_CLEAR:          return SK_CLEAR;
 
-		case VK_ADD:      return SK_PLUS;
-		case VK_SUBTRACT: return SK_SUBTRACT;
-		case VK_MULTIPLY: return SK_MULTIPLY;
-		case VK_DIVIDE:   return SK_DIVIDE;
+		case VK_ADD:            return SK_PLUS;
+		case VK_SUBTRACT:       return SK_SUBTRACT;
+		case VK_MULTIPLY:       return SK_MULTIPLY;
+		case VK_DIVIDE:         return SK_DIVIDE;
 
-		case VK_LEFT:  return SK_LEFT;
-		case VK_RIGHT: return SK_RIGHT;
-		case VK_UP:    return SK_UP;
-		case VK_DOWN:  return SK_DOWN;
+		case VK_LEFT:           return SK_LEFT;
+		case VK_RIGHT:          return SK_RIGHT;
+		case VK_UP:             return SK_UP;
+		case VK_DOWN:           return SK_DOWN;
 
-		case VK_NUMPAD0:   return SK_NUMPAD_0;
-		case VK_NUMPAD1:   return SK_NUMPAD_1;
-		case VK_NUMPAD2:   return SK_NUMPAD_2;
-		case VK_NUMPAD3:   return SK_NUMPAD_3;
-		case VK_NUMPAD4:   return SK_NUMPAD_4;
-		case VK_NUMPAD6:   return SK_NUMPAD_6;
-		case VK_NUMPAD7:   return SK_NUMPAD_7;
-		case VK_NUMPAD8:   return SK_NUMPAD_8;
-		case VK_NUMPAD9:   return SK_NUMPAD_9;
-		case VK_SEPARATOR: return SK_NUMPAD_ENTER;
-		case VK_DECIMAL:   return SK_NUMPAD_DOT;
+		case VK_NUMPAD0:        return SK_NUMPAD_0;
+		case VK_NUMPAD1:        return SK_NUMPAD_1;
+		case VK_NUMPAD2:        return SK_NUMPAD_2;
+		case VK_NUMPAD3:        return SK_NUMPAD_3;
+		case VK_NUMPAD4:        return SK_NUMPAD_4;
+		case VK_NUMPAD6:        return SK_NUMPAD_6;
+		case VK_NUMPAD7:        return SK_NUMPAD_7;
+		case VK_NUMPAD8:        return SK_NUMPAD_8;
+		case VK_NUMPAD9:        return SK_NUMPAD_9;
+		case VK_SEPARATOR:      return SK_NUMPAD_ENTER;
+		case VK_DECIMAL:        return SK_NUMPAD_DOT;
 
-		case VK_F1:  return SK_F1;
-		case VK_F2:  return SK_F2;
-		case VK_F3:  return SK_F3;
-		case VK_F4:  return SK_F4;
-		case VK_F5:  return SK_F5;
-		case VK_F6:  return SK_F6;
-		case VK_F7:  return SK_F7;
-		case VK_F8:  return SK_F8;
-		case VK_F9:  return SK_F9;
-		case VK_F10: return SK_F10;
-		case VK_F11: return SK_F11;
-		case VK_F12: return SK_F12;
-		case VK_F13: return SK_F13;
-		case VK_F14: return SK_F14;
-		case VK_F15: return SK_F15;
+		case VK_F1:             return SK_F1;
+		case VK_F2:             return SK_F2;
+		case VK_F3:             return SK_F3;
+		case VK_F4:             return SK_F4;
+		case VK_F5:             return SK_F5;
+		case VK_F6:             return SK_F6;
+		case VK_F7:             return SK_F7;
+		case VK_F8:             return SK_F8;
+		case VK_F9:             return SK_F9;
+		case VK_F10:            return SK_F10;
+		case VK_F11:            return SK_F11;
+		case VK_F12:            return SK_F12;
+		case VK_F13:            return SK_F13;
+		case VK_F14:            return SK_F14;
+		case VK_F15:            return SK_F15;
+#elif defined(SIAPP_PLATFORM_API_X11)
+        case XK_Escape:         return SK_ESC;
+
+        case XK_Control_L:      return SK_CTRL_L;
+        case XK_Shift_L:        return SK_SHIFT_L;
+        case XK_Alt_L:          return SK_ALT_L;
+        case XK_Super_L:        return SK_SYSTEM_L;
+
+        case XK_Control_R:      return SK_CTRL_L;
+        case XK_Shift_R:        return SK_SHIFT_L;
+        case XK_Alt_R:          return SK_ALT_L;
+        case XK_Super_R:        return SK_SYSTEM_R;
+
+        case XK_Caps_Lock:      return SK_CAPS_LOCK;
+        case XK_Scroll_Lock:    return SK_SCROLL_LOCK;
+        case XK_Num_Lock:       return SK_NUM_LOCK;
+
+        case XK_Pause:          return SK_PAUSE;
+        case XK_Menu:           return SK_MENU;
+        case XK_bracketleft:    return SK_BRACKET_L;
+        case XK_bracketright:   return SK_BRACKET_R;
+        case XK_semicolon:      return SK_SEMICOLON;
+        case XK_comma:          return SK_COMMA;
+        case XK_period:         return SK_PERIOD;
+        case XK_apostrophe:     return SK_QUOTE;
+        case XK_slash:          return SK_SLASH;
+        case XK_backslash:      return SK_BACKSLASH;
+        case XK_grave:          return SK_GRAVE;
+        case XK_equal:          return SK_EQUALS;
+
+        case XK_minus:          return SK_MINUS;
+
+        case XK_space:          return SK_SPACE;
+        case XK_Return:         return SK_RETURN;
+        case XK_BackSpace:      return SK_BACKSPACE;
+        case XK_Tab:            return SK_TAB;
+
+        case XK_Prior:          return SK_PAGE_UP;
+        case XK_Next:           return SK_PAGE_DOWN;
+        case XK_End:            return SK_END;
+        case XK_Home:           return SK_HOME;
+        case XK_Insert:         return SK_INSERT;
+        case XK_Delete:         return SK_DELETE;
+        case XK_Clear:          return SK_CLEAR;
+
+        case XK_KP_Add:         return SK_PLUS;
+        case XK_KP_Subtract:    return SK_MINUS;
+        case XK_KP_Multiply:    return SK_MULTIPLY;
+        case XK_KP_Divide:      return SK_DIVIDE;
+
+        case XK_Left:           return SK_LEFT;
+        case XK_Right:          return SK_RIGHT;
+        case XK_Up:             return SK_UP;
+        case XK_Down:           return SK_DOWN;
+
+        case XK_KP_Insert:
+        case XK_KP_0:           return SK_NUMPAD_0;
+        case XK_KP_End:
+        case XK_KP_1:           return SK_NUMPAD_1;
+        case XK_KP_Down:
+        case XK_KP_2:           return SK_NUMPAD_2;
+        case XK_KP_Page_Down:
+        case XK_KP_3:           return SK_NUMPAD_3;
+        case XK_KP_Left:
+        case XK_KP_4:           return SK_NUMPAD_4;
+        case XK_KP_5:           return SK_NUMPAD_5;
+        case XK_KP_Right:
+        case XK_KP_6:           return SK_NUMPAD_6;
+        case XK_KP_Home:
+        case XK_KP_7:           return SK_NUMPAD_7;
+        case XK_KP_Up:
+        case XK_KP_8:           return SK_NUMPAD_8;
+        case XK_KP_Page_Up:
+        case XK_KP_9:           return SK_NUMPAD_9;
+        case XK_KP_Enter:       return SK_NUMPAD_ENTER;
+        case XK_KP_Delete:
+        case XK_KP_Decimal:     return SK_NUMPAD_DOT;
+
+
+        case XK_F1:             return SK_F1;
+        case XK_F2:             return SK_F2;
+        case XK_F3:             return SK_F3;
+        case XK_F4:             return SK_F4;
+        case XK_F5:             return SK_F5;
+        case XK_F6:             return SK_F6;
+        case XK_F7:             return SK_F7;
+        case XK_F8:             return SK_F8;
+        case XK_F9:             return SK_F9;
+        case XK_F10:            return SK_F10;
+        case XK_F11:            return SK_F11;
+        case XK_F12:            return SK_F12;
+        case XK_F13:            return SK_F13;
+        case XK_F14:            return SK_F14;
+        case XK_F15:            return SK_F15;
+#endif
 	}
 
 	return SK_UNKNOWN;
@@ -2230,6 +2897,7 @@ F_TRAITS(inline)
 cstring siapp_osErrToStr(i32 error) {
 	static char buf[128];
 
+#if defined(SIAPP_PLATFORM_API_WIN32)
 	DWORD len = FormatMessageA(
 		FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
 		nil, error, 0, buf, sizeof(buf), nil
@@ -2246,17 +2914,19 @@ cstring siapp_osErrToStr(i32 error) {
 		si_dllUnload(handle);
 	}
 	buf[len] = '\0';
+#endif
 
 	return buf;
 }
 
 
 siSiliStr siapp_usernameGet(void) {
-	static char buffer[sizeof(usize) + MAX_PATH + 1];
+#if defined(SIAPP_PLATFORM_API_WIN32)
+	static char buffer[sizeof(usize) + SI_MAX_PATH_LEN + 1];
 	siAllocator tmp = si_allocatorMakeTmp(buffer, sizeof(buffer));
 
 	usize* len = si_mallocItem(&tmp, usize);
-	u16 resultWide[MAX_PATH + 1];
+	u16 resultWide[SI_MAX_PATH_LEN + 1];
 
 	{
 		DWORD wideLen = sizeof(buffer);
@@ -2266,10 +2936,12 @@ siSiliStr siapp_usernameGet(void) {
 	siSiliStr str = (siSiliStr)si_utf16ToUtf8Str(&tmp, resultWide, len);
 
 	return str;
+#endif
 }
 
 
 siSearchResult siapp_fileManagerOpen(siAllocator* alloc, siSearchConfig config) {
+#if defined(SIAPP_PLATFORM_API_WIN32)
 	siAllocator* stack = si_allocatorMake(SI_KILO(4));
 	IFileOpenDialog* pfd;
 	IShellItemArray* items;
@@ -2362,6 +3034,7 @@ siSearchResult siapp_fileManagerOpen(siAllocator* alloc, siSearchConfig config) 
 	pfd->lpVtbl->Release(pfd);
 
 	return res;
+#endif
 }
 
 
@@ -2370,18 +3043,20 @@ siSiliStr siapp_appDataPathMake(cstring folderName) {
 	return siapp_appDataPathMakeEx(folderName, si_cstrLen(folderName));
 }
 siSiliStr siapp_appDataPathMakeEx(cstring folderName, usize folderNameLen) {
-	static char buffer[sizeof(usize) + MAX_PATH + 1];
+	static char buffer[sizeof(usize) + SI_MAX_PATH_LEN + 1];
 	siAllocator tmp = si_allocatorMakeTmp(buffer, sizeof(buffer));
 
 	siSiliStr str;
 	usize* len = si_mallocItem(&tmp, usize);
-	u16 resultWide[MAX_PATH + 1];
+	u16 resultWide[SI_MAX_PATH_LEN + 1];
 
-	{
+    {
+#if defined(SIAPP_PLATFORM_API_WIN32)
 		i32 res = SHGetFolderPathW(nil, CSIDL_LOCAL_APPDATA, nil, 0, resultWide);
 		SI_STOPIF(res != S_OK, return nil);
 		str = (siSiliStr)si_utf16ToUtf8Str(&tmp, resultWide, len);
-	}
+#endif
+    }
 	usize curLen = *len;
 
 	str[curLen] = SI_PATH_SEPARATOR;
@@ -2400,11 +3075,11 @@ siTextureAtlas* siapp_textureAtlasMake(const siWindow* win, siArea area, u32 max
 
 	siTextureAtlas* atlas = si_mallocItem(win->alloc, siTextureAtlas);
 	atlas->renderingType = win->arg & SI_WINDOW_RENDERING_BITS;
-	atlas->curCount = 0;
 	atlas->texWidth = area.width;
 	atlas->texHeight = area.height;
-	atlas->maxCount = maxTexCount;
-	atlas->totalWidth = atlas->texWidth * atlas->maxCount;
+    atlas->curCount = 0;
+    atlas->curWidth = 0;
+	atlas->totalWidth = atlas->texWidth * maxTexCount;
 
 	switch (atlas->renderingType) {
 		case SI_WINDOW_RENDERING_OPENGL: {
@@ -2491,11 +3166,11 @@ siImage siapp_imageLoad(siTextureAtlas* atlas, cstring filename) {
 siImage siapp_imageLoadEx(siTextureAtlas* atlas, const siByte* buffer, u32 width,
 		u32 height, u32 channels) {
 	SI_ASSERT_NOT_NULL(atlas);
-	SI_ASSERT_MSG(
-		width <= atlas->texWidth && height <= atlas->texHeight,
-		"The image's size dimensions be less or equal to the texture atlas'."
+	SI_ASSERT_FMT(
+		width + atlas->curWidth <= atlas->totalWidth && height <= atlas->texHeight,
+		"The image's size dimensions be less or equal to the texture atlas'. (%i > %i)",
+        width + atlas->curWidth, atlas->totalWidth
 	);
-
 	siImage res;
 	res.size = SI_AREA(width, height);
 
@@ -2510,34 +3185,33 @@ siImage siapp_imageLoadEx(siTextureAtlas* atlas, const siByte* buffer, u32 width
 			}
 
 			res.atlas = atlas;
-			res.id = atlas->curCount;
+            res.id = atlas->curCount;
 
 			glActiveTexture(GL_TEXTURE0 + atlas->texID - 1);
 			glBindTexture(GL_TEXTURE_2D, atlas->texID);
 
-			u32 curWidth = res.id * atlas->texWidth;
 			glTexSubImage2D(
 				GL_TEXTURE_2D,
 				0,
-				curWidth, 0,
+				atlas->curWidth, 0,
 				width, height, c,
 				GL_UNSIGNED_BYTE,
 				buffer
 			);
 
-			res.x1 = (f32)curWidth / atlas->totalWidth;
+			res.x1 = (f32)atlas->curWidth / atlas->totalWidth;
 			res.x2 = res.x1 + (f32)width / atlas->totalWidth;
 			res.y1 = 0;
 			res.y2 = (f32)height / atlas->texHeight;
 
-			atlas->curCount += 1;
+            atlas->curWidth += width;
+            atlas->curCount += 1;
 			break;
 		}
 	}
 
 	return res;
 }
-
 
 F_TRAITS(inline)
 siSpriteSheet siapp_spriteSheetLoad(siTextureAtlas* atlas, cstring filename,
@@ -2637,14 +3311,16 @@ void siapp_spriteSheetSpriteSetEx(siSpriteSheet sheet, usize index, const siByte
 }
 
 F_TRAITS(inline)
-siFont siapp_fontLoad(siWindow* win, cstring path, i32 size, siGlyphSet* glyphs,
-		usize arrayLen) {
-	return siapp_fontLoadEx(win, path, size, glyphs, arrayLen, 0);
+siFont siapp_fontLoad(siWindow* win, cstring path, i32 size) {
+	return siapp_fontLoadEx(win, path, size, si_buf(siGlyphSet, SI_CHARSET_WGL4, SI_GLYPHSET_END), 0);
+}
+F_TRAITS(inline)
+siFont siapp_fontLoadExtra(siWindow* win, cstring path, i32 size, usize extraChars) {
+	return siapp_fontLoadEx(win, path, size, si_buf(siGlyphSet, SI_CHARSET_WGL4, SI_GLYPHSET_END), extraChars);
 }
 
-
 siFont siapp_fontLoadEx(siWindow* win, cstring path, i32 size, siGlyphSet* glyphs,
-		usize arrayLen, u32 extraChars) {
+        u32 extraChars) {
 	SI_ASSERT_NOT_NULL(win);
 	SI_ASSERT_NOT_NULL(glyphs);
 
@@ -2654,23 +3330,24 @@ siFont siapp_fontLoadEx(siWindow* win, cstring path, i32 size, siGlyphSet* glyph
 
 	{
 		siFile file = si_fileOpen(path);
-		tmpAlloc = si_allocatorMake(file.size + size * size);
-		siByte* content = si_fileReadContents(tmpAlloc, file);
+        tmpAlloc = si_allocatorMake(file.size + size * size);
+
+        siByte* content = si_fileReadContents(tmpAlloc, file);
 		stbtt_InitFont(&font.stbtt, content, 0);
-		si_fileClose(file);
+
+        si_fileClose(file);
 	}
 
 	u32 charCount = extraChars;
-	for_range (i, 0, arrayLen) {
-		siGlyphSet set = glyphs[i];
-		charCount += set.end - set.start + 1;
-	}
+    u32 arrayLen = 0;
+    while (true) {
+		siGlyphSet set = glyphs[arrayLen];
+        SI_STOPIF(set.end == '?' && set.start == '?', break);
 
-	font.glyphs = si_arrayMakeReserve(win->alloc, sizeof(siGlyphInfo), charCount);
-	font.sets = si_arrayMakeReserve(win->alloc, sizeof(siGlyphSetANDNIndex), arrayLen);
-	SI_ARRAY_HEADER(font.glyphs)->len = charCount;
-	SI_ARRAY_HEADER(font.sets)->len = arrayLen;
-	//memset(font.glyphs, 0, charCount * sizeof(siGlyphInfo));
+        charCount += set.end - set.start + 1;
+        arrayLen += 1;
+	}
+    arrayLen += 1;
 
 	{
 		isize texSize = 128;
@@ -2681,7 +3358,7 @@ siFont siapp_fontLoadEx(siWindow* win, cstring path, i32 size, siGlyphSet* glyph
 		}
 
 		// TODO(EimaMei): Merge.
-		siTextureAtlas* atlas = siapp_textureAtlasMake(win, SI_AREA(texSize, texSize), 1, SI_RESIZE_DEFAULT);//texSize, texSize), texCount + extraTextures);
+		siTextureAtlas* atlas = siapp_textureAtlasMake(win, SI_AREA(texSize, texSize), 1, SI_RESIZE_DEFAULT);
 		font.sheet = siapp_spriteSheetLoadEx(atlas, nil, texSize, texSize, 4, SI_AREA(size, size));
 
 		siapp_textureSwizzleMask(
@@ -2689,6 +3366,10 @@ siFont siapp_fontLoadEx(siWindow* win, cstring path, i32 size, siGlyphSet* glyph
 			si_buf(i32, SI_SWIZZLE_VAL_1, SI_SWIZZLE_VAL_1, SI_SWIZZLE_VAL_1, SI_SWIZZLE_VAL_R)
 		);
 	}
+    font.sets = si_arrayMakeReserve(win->alloc, sizeof(siGlyphSetANDNIndex), arrayLen);
+    font.glyphs = si_arrayMakeReserve(win->alloc, sizeof(siGlyphInfo), charCount);
+    SI_ARRAY_HEADER(font.glyphs)->len = charCount;
+    SI_ARRAY_HEADER(font.sets)->len = arrayLen;
 
 	siByte* tmpBuf = si_mallocArray(tmpAlloc, siByte, size * size);
 	font.scale = stbtt_ScaleForPixelHeight(&font.stbtt, size);
@@ -2710,6 +3391,7 @@ siFont siapp_fontLoadEx(siWindow* win, cstring path, i32 size, siGlyphSet* glyph
 		for_range (codepoint, set.start, set.end + 1) {
 			siGlyphInfo* glyph = &font.glyphs[indexCount];
 			i32 glyphIndex = stbtt_FindGlyphIndex(&font.stbtt, codepoint);
+            SI_STOPIF(glyphIndex == 0, continue);
 
 			glyph->codepoint = codepoint;
 			glyph->glyphIndex = glyphIndex;
@@ -2745,9 +3427,16 @@ siFont siapp_fontLoadEx(siWindow* win, cstring path, i32 size, siGlyphSet* glyph
 		}
 	}
 	font.unknownSymbolIndex = siapp_fontGlyphFind(&font, '?') - font.glyphs;
+    if (extraChars == 0 ) {
+        si_arrayShrinkToFit(&font.glyphs);
+    }
+
 	si_allocatorFree(tmpAlloc);
 
 	return font;
+}
+void siapp_fontFree(siFont font) {
+    siapp_textureAtlasFree(font.sheet.base.atlas);
 }
 
 F_TRAITS(inline)
@@ -2795,7 +3484,7 @@ siArea siapp_textGetArea(siText text, u32 size) {
 }
 
 F_TRAITS(inline)
-siVec2 siapp_textGetArea2f(siText text, u32 size) {
+siVec2 siapp_textGetAreaF(siText text, u32 size) {
 	f32 scaleFactor = (f32)size / text.font->size * 1.15;
 	return SI_VEC2(text.totalArea.x * scaleFactor, text.totalArea.y * scaleFactor);
 }
@@ -2827,7 +3516,6 @@ siText siapp_textLoadLen(siAllocator* alloc, siFont* font, cstring text, usize c
 			case '\r':
 			case '\n': {
 				chars[i] = -utf32.codepoint;
-				si_printf("%f %i\n", siapp_textAdvanceXGet(txt, i), font->size);
 				area.x += siapp_textAdvanceXGet(txt, i);
 				strPtr += 1;
 				continue;
@@ -3019,6 +3707,13 @@ void siapp_windowBackgroundSet(siWindow* win, siColor color) {
 			siapp_windowClear(win);
 			break;
 		}
+        default: {
+            #if defined(SIAPP_PLATFORM_API_X11)
+                u32 clr = ((u32)color.r << 16) | ((u32)color.g << 8) | color.b;
+                XSetWindowBackground(win->display, win->hwnd, clr);
+                XFlush(win->display);
+            #endif
+        }
 	}
 }
 
@@ -3072,15 +3767,11 @@ F_TRAITS(inline)
 void siapp_drawVertex3f(siWindow* win, f32 x, f32 y, f32 z) {
 	SI_ASSERT_NOT_NULL(win);
 	siWinRenderingCtxOpenGL* gl = &win->render.opengl;
-	SI_ASSERT_MSG(gl->vertexCounter < 4 * win->maxDrawCount, "Not enough space is left inside the buffer.");
+	SI_ASSERT_MSG(gl->vertexCounter < gl->maxVertexCount, "Not enough space is left inside the buffer.");
 
-	gl->vertices[3 * gl->vertexCounter + 0] = x;
-	gl->vertices[3 * gl->vertexCounter + 1] = y;
-	gl->vertices[3 * gl->vertexCounter + 2] = z;
-
-	b32 copyIfNoGradient = (gl->gradientLen == 0);
-	memcpy(&gl->colors[4 * gl->vertexCounter], &gl->curColor, copyIfNoGradient * sizeof(gl->curColor));
-	memcpy(&gl->texCoords[2 * gl->vertexCounter], &gl->curTexCoords, sizeof(gl->curTexCoords));
+	gl->vertices[gl->vertexCounter] = SI_VEC3(x, y, z);
+    gl->texCoords[gl->vertexCounter] = gl->curTexCoords;
+	gl->colors[gl->vertexCounter] = gl->curColor;
 
 	gl->vertexCounter += 1;
 }
@@ -3090,9 +3781,7 @@ void siapp_drawRect(siWindow* win, siRect rect, siColor color) {
 void siapp_drawRectF(siWindow* win, siVec4 rect, siColor color) {
 	SI_ASSERT_NOT_NULL(win);
 	siWinRenderingCtxOpenGL* gl = &win->render.opengl;
-	if (gl->vertexCounter + 4 > 4 * win->maxDrawCount) {
-		siapp_windowRender(win);
-	}
+    SI_STOPIF(gl->vertexCounter + 4 > gl->maxVertexCount, siapp_windowRender(win));
 
 	f32 x1 = i32ToNDCX(rect.x, gl->size.width); // TODO(EimaMei): Optimize i32ToNDCX. SIMD MAYBE?
 	f32 y1 = i32ToNDCY(rect.y, gl->size.height);
@@ -3107,7 +3796,7 @@ void siapp_drawRectF(siWindow* win, siVec4 rect, siColor color) {
 	siapp_drawVertex2f(win, x1, y2);
 
 	// NOTE(EimaMei): Check if this can be optimized with instances.
-	si_addVertexesToCMD(gl, 6, 4);
+	siapp__addVertexesToCMD(gl, 6, 4);
 }
 F_TRAITS(inline)
 void siapp_drawImage(siWindow* win, siRect rect, siImage img) {
@@ -3116,9 +3805,7 @@ void siapp_drawImage(siWindow* win, siRect rect, siImage img) {
 void siapp_drawImageF(siWindow* win, siVec4 rect, siImage img) {
 	SI_ASSERT_NOT_NULL(win);
 	siWinRenderingCtxOpenGL* gl = &win->render.opengl;
-	if (gl->vertexCounter + 4 > 4 * win->maxDrawCount) {
-		siapp_windowRender(win);
-	}
+    SI_STOPIF(gl->vertexCounter + 4 > gl->maxVertexCount, siapp_windowRender(win));
 
 	f32 x1 = i32ToNDCX(rect.x, gl->size.width);
 	f32 y1 = i32ToNDCY(rect.y, gl->size.height);
@@ -3136,20 +3823,17 @@ void siapp_drawImageF(siWindow* win, siVec4 rect, siImage img) {
 
 	gl->curTex = &gl->defaultTex;
 
-	si_addVertexesToCMD(gl, 6, 4);
+	siapp__addVertexesToCMD(gl, 6, 4);
 }
 F_TRAITS(inline)
 void siapp_drawTriangle(siWindow* win, siTriangle triangle, siColor color) {
 	siapp_drawTriangleF(win, SI_TRIANGLE_INT_TO_FLOAT(triangle), color);
 }
-
 void siapp_drawTriangleF(siWindow* win, siTriangleF triangle, siColor color) {
 	SI_ASSERT_NOT_NULL(win);
 
 	siWinRenderingCtxOpenGL* gl = &win->render.opengl;
-	if (gl->vertexCounter + 3 > 4 * win->maxDrawCount) {
-		siapp_windowRender(win);
-	}
+    SI_STOPIF(gl->vertexCounter + 3 > gl->maxVertexCount, siapp_windowRender(win));
 
 	f32 x1 = i32ToNDCX(triangle.p1.x, gl->size.width),
 		y1 = i32ToNDCY(triangle.p1.y, gl->size.height);
@@ -3163,14 +3847,12 @@ void siapp_drawTriangleF(siWindow* win, siTriangleF triangle, siColor color) {
 	siapp_drawVertex2f(win, x2, y2);
 	siapp_drawVertex2f(win, x3, y3);
 
-	si_addVertexesToCMD(gl, 3, 3);
+	siapp__addVertexesToCMD(gl, 3, 3);
 }
-
 void siapp_drawTriangleRight(siWindow* win, siPoint start, f32 hypotenuse,
 		f32 startingAngle, siColor color) {
 	SI_ASSERT_NOT_NULL(win);
 	SI_ASSERT(hypotenuse > 0);
-
 
 	f32 x1 = hypotenuse * si_cos(SI_TO_RADIANS(startingAngle)),
 		y1 = hypotenuse * si_sin(SI_TO_RADIANS(startingAngle));
@@ -3183,7 +3865,6 @@ void siapp_drawTriangleRight(siWindow* win, siPoint start, f32 hypotenuse,
 
 	siapp_drawTriangleF(win, t, color);
 }
-
 void siapp_drawTriangleIsosceles(siWindow* win, siPoint start, f32 length,
 		f32 startingAngle, siColor color) {
 	SI_ASSERT_NOT_NULL(win);
@@ -3204,36 +3885,63 @@ void siapp_drawTriangleIsosceles(siWindow* win, siPoint start, f32 length,
 }
 F_TRAITS(inline)
 void siapp_drawCircle(siWindow* win, siPoint pos, i32 radius, siColor color) {
-	siapp_drawCircleEx(win, pos, radius, color, 90);
+	siapp_drawCircleEx(win, pos, radius, 90, color);
 }
-void siapp_drawCircleEx(siWindow* win, siPoint pos, i32 diameter, siColor color, u32 sides) {
+F_TRAITS(inline)
+void siapp_drawCircleF(siWindow* win, siVec2 pos, i32 radius, siColor color) {
+	siapp_drawCircleExF(win, pos, radius, 90, color);
+}
+F_TRAITS(inline)
+void siapp_drawCircleEx(siWindow* win, siPoint pos, i32 radius, u32 sides, siColor color) {
+	siapp_drawCircleExF(win, SI_VEC2(pos.x, pos.y), radius, sides, color);
+}
+F_TRAITS(inline)
+void siapp_drawCircleExF(siWindow* win, siVec2 pos, i32 radius, u32 sides, siColor color) {
+    f32 diameter = radius * 2.0f;
+	siapp_drawPolygonF(win, SI_VEC4(pos.x, pos.y, diameter, diameter), sides, color);
+}
+F_TRAITS(inline)
+void siapp_drawPolygon(siWindow* win, siRect rect, u32 sides, siColor color) {
+	siapp_drawPolygonF(
+        win,
+        SI_VEC4(rect.x, rect.y, rect.width, rect.height),
+        sides, color
+    );
+}
+void siapp_drawPolygonF(siWindow* win, siVec4 rect, u32 sides, siColor color) {
 	SI_ASSERT_NOT_NULL(win);
-	siWinRenderingCtxOpenGL* gl = &win->render.opengl;
-	if (gl->vertexCounter + sides > 4 * win->maxDrawCount) {
-		siapp_windowRender(win);
-	}
+
+    siWinRenderingCtxOpenGL* gl = &win->render.opengl;
+    SI_STOPIF(gl->vertexCounter + sides > gl->maxVertexCount, siapp_windowRender(win));
+
+    f32 radiusX = i32ToNDCX(rect.x + rect.z / 2.0f, gl->size.width);
+    f32 radiusY = i32ToNDCY(rect.y + rect.w / 2.0f, gl->size.height);
+    f32 x2 = rect.z / gl->size.width;
+    f32 y2 = rect.w / gl->size.height; /* NOTE(EimaMei): We can just use the
+                                            width/height directly instead of
+                                            radiuses due to the NDC formula
+                                            requiring a multiplication by two,
+                                            so the divide and multiply get
+                                            canceled out. */
 
 
-	i32 radius = diameter / 2;
-	f32 x = (f32)radius / (f32)si_cast(i32, gl->size.width / 2);
-	f32 x2 = i32ToNDCX(pos.x + radius, gl->size.width);
-	f32 y = 0;
-	f32 y2 = i32ToNDCY(pos.y + radius, gl->size.height);
-
-	f32 theta = SI_TAU / (f32)sides;
-	f32 cc = si_cos(theta);
-	f32 s = si_sin(theta);
+	f32 theta = SI_TO_RADIANS(360.0f / (f32)sides);
+    f32 angle = 0;
 
 	siapp_color4f(win, color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f);
-	for_range (i, 0, sides) {
-		siapp_drawVertex2f(win, x + x2, y * 1.77 + y2);
 
-		f32 t = x;
-		x = cc * x - s * y;
-		y = s * t + cc * y;
+    f32 x, y;
+    for_range (i, 0, sides) {
+        x = radiusX + x2 * si_sin(angle),
+        y = radiusY + y2 * si_cos(angle);
+
+        siapp_drawVertex2f(win, x, y);
+        angle += theta;
 	}
 
-	si_addVertexesToCMD(gl, sides + sides / 2, sides);
+    u32 half = sides / 2;
+    half &= ~SI_BIT(0); /* NOTE(EimaMei): Makes the number even by clearing bit 0. */
+	siapp__addVertexesToCMD(gl, sides + half, sides);
 }
 
 F_TRAITS(inline)
@@ -3412,11 +4120,9 @@ siVec2 siapp_drawTextFmtF(siWindow* win, siText text, siVec2 pos, u32 size) {
 f32 siapp_drawCharacterScale(siWindow* win, const siFont* font, const siGlyphInfo* character,
 		siVec2 pos, u32 size, f32 scaleFactor) {
 	SI_ASSERT_NOT_NULL(win);
-	siWinRenderingCtxOpenGL* gl = &win->render.opengl;
-	if (gl->vertexCounter + 4 > 4 * win->maxDrawCount) {
-		//si_print("We reached our end! Executing siapp_windowRender\n");
-		siapp_windowRender(win);
-	}
+
+    siWinRenderingCtxOpenGL* gl = &win->render.opengl;
+    SI_STOPIF(gl->vertexCounter + 4 > gl->maxVertexCount, siapp_windowRender(win));
 
 	const siGlyphInfo* glyph = character;
 	siImage img = siapp_spriteSheetSpriteGet(font->sheet, glyph->texID);
@@ -3438,8 +4144,8 @@ f32 siapp_drawCharacterScale(siWindow* win, const siFont* font, const siGlyphInf
 	f32 y2 = i32ToNDCY(baseY + height, gl->size.height);
 
 	{
-		siVec4 bgColor = win->textColor.vec4;
-		siapp_color4f(win, bgColor.x, bgColor.y, bgColor.z, bgColor.w);
+		siVec4 clr = win->textColor.vec4;
+		siapp_color4f(win, clr.x, clr.y, clr.z, clr.w);
 		gl->curTex = &img;
 
 		siapp_texCoords2f(win, img.x1, img.y1); siapp_drawVertex2f(win, x1, y1);
@@ -3448,7 +4154,7 @@ f32 siapp_drawCharacterScale(siWindow* win, const siFont* font, const siGlyphInf
 		siapp_texCoords2f(win, img.x1, img.y2); siapp_drawVertex2f(win, x1, y2);
 		siapp_texCoords2f(win, 0, 0);
 
-		si_addVertexesToCMD(gl, 6, 4);
+		siapp__addVertexesToCMD(gl, 6, 4);
 		gl->curTex = &gl->defaultTex;
 	}
 
@@ -3458,9 +4164,7 @@ f32 siapp_drawCharacterItalicScale(siWindow* win, const siFont* font, const siGl
 		siVec2 pos, u32 size, f32 scaleFactor) {
 	SI_ASSERT_NOT_NULL(win);
 	siWinRenderingCtxOpenGL* gl = &win->render.opengl;
-	if (gl->vertexCounter + 4 > 4 * win->maxDrawCount) {
-		siapp_windowRender(win);
-	}
+    SI_STOPIF(gl->vertexCounter + 4 > gl->maxVertexCount, siapp_windowRender(win));
 
 	const siGlyphInfo* glyph = character;
 	siImage img = siapp_spriteSheetSpriteGet(font->sheet, glyph->texID);
@@ -3497,7 +4201,7 @@ f32 siapp_drawCharacterItalicScale(siWindow* win, const siFont* font, const siGl
 		siapp_texCoords2f(win, img.x1, img.y2); siapp_drawVertex2f(win, x4, y2);
 		siapp_texCoords2f(win, 0, 0);
 
-		si_addVertexesToCMD(gl, 6, 4);
+		siapp__addVertexesToCMD(gl, 6, 4);
 		gl->curTex = &gl->defaultTex;
 	}
 
@@ -3508,19 +4212,13 @@ F_TRAITS(inline)
 void siapp_color3f(siWindow* win, f32 r, f32 g, f32 b) {
 	SI_ASSERT_NOT_NULL(win);
 	siWinRenderingCtxOpenGL* gl = &win->render.opengl;
-	gl->curColor.x = r;
-	gl->curColor.y = g;
-	gl->curColor.z = b;
-	gl->curColor.w = 1.0f;
+	gl->curColor = SI_VEC4(r, g, b, 1.0f);
 }
 F_TRAITS(inline)
 void siapp_color4f(siWindow* win, f32 r, f32 g, f32 b, f32 a) {
 	SI_ASSERT_NOT_NULL(win);
 	siWinRenderingCtxOpenGL* gl = &win->render.opengl;
-	gl->curColor.x = r;
-	gl->curColor.y = g;
-	gl->curColor.z = b;
-	gl->curColor.w = a;
+	gl->curColor = SI_VEC4(r, g, b, a);
 }
 F_TRAITS(inline)
 void siapp_colorVec4f(siWindow* win, siVec4 color) {
@@ -3532,8 +4230,7 @@ void siapp_colorVec4f(siWindow* win, siVec4 color) {
 void siapp_texCoords2f(siWindow* win, f32 x, f32 y) {
 	SI_ASSERT_NOT_NULL(win);
 	siWinRenderingCtxOpenGL* gl = &win->render.opengl;
-	gl->curTexCoords.x  = x;
-	gl->curTexCoords.y = y;
+	gl->curTexCoords = SI_VEC2(x, y);
 }
 
 
@@ -3593,7 +4290,7 @@ const char* GetStringForEnum(GLenum value) {
 	}
 }
 
-void APIENTRY DebugCallback(GLenum source, GLenum type, GLuint id, GLenum severity,
+void DebugCallback(GLenum source, GLenum type, GLuint id, GLenum severity,
 							GLsizei length, const GLchar* message, const void* userParam) {
 	si_printf(
 		"SILI DEBUG: %s %s %i %s: '%s'\n",
@@ -3603,10 +4300,11 @@ void APIENTRY DebugCallback(GLenum source, GLenum type, GLuint id, GLenum severi
 	SI_UNUSED(userParam);
 }
 
-b32 siapp_windowOpenGLInit(siWindow* win, siArea screenSize, u32 maxTexCount, siArea maxTexRes) {
+b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
+        siArea maxTexRes) {
 	SI_ASSERT_NOT_NULL(win);
 	siWinRenderingCtxOpenGL* gl = &win->render.opengl;
-	gl->size = screenSize;
+	gl->size = win->originalSize;
 
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	PIXELFORMATDESCRIPTOR pfd = {0};
@@ -3641,30 +4339,84 @@ b32 siapp_windowOpenGLInit(siWindow* win, siArea screenSize, u32 maxTexCount, si
 	res = wglMakeCurrent(win->hdc, gl->context);
 	SIAPP_ERROR_CHECK(res == false, "wglMakeCurrent");
 
-	if (glInfo.isLoaded == false) {
-		sigl_loadOpenGLAll();
-		glInfo.isLoaded = true;
+#elif defined (SIAPP_PLATFORM_API_X11)
+    // NOTE(EimaMei): Most of this is taken from https://github.com/ColleagueRiley/RGFW/blob/main/RGFW.h.
 
-		glGetIntegerv(GL_MAJOR_VERSION, &glInfo.versionSelected.major);
-		glGetIntegerv(GL_MINOR_VERSION, &glInfo.versionSelected.major);
+    i32 defaultAttribs[] = {
+		GLX_X_RENDERABLE    , True,
+		GLX_DRAWABLE_TYPE   , GLX_WINDOW_BIT,
+		GLX_RENDER_TYPE     , GLX_RGBA_BIT,
+		GLX_X_VISUAL_TYPE   , GLX_TRUE_COLOR,
+		GLX_RED_SIZE        , 8,
+		GLX_GREEN_SIZE      , 8,
+		GLX_BLUE_SIZE       , 8,
+		GLX_ALPHA_SIZE      , 8,
+		GLX_DEPTH_SIZE      , 24,
+		GLX_DOUBLEBUFFER    , True,
+		GLX_STENCIL_SIZE	, glInfo.stencilSize,
+		GLX_STEREO			, glInfo.stereo,
+		GLX_AUX_BUFFERS		, glInfo.auxBuffers,
+		None
+	};
 
-		if (glInfo.versionSelected.major == 0 && glInfo.versionSelected.minor == 0) {
-			siapp_messageBox(
-				"OpenGL not present",
-				"OpenGL version on this system is set to 0.0, meaning it doesn't exist.\n"
-				"If you have a GPU in your computer, install the latest OpenGL "
-				"drivers from your GPU's vendor. If not, this application cannot "
-				"be ran properly on this computer setup.",
-				SI_MESSAGE_BOX_OK, SI_MESSAGE_BOX_ICON_ERROR
-			);
-			return false;
-		}
-		glGetIntegerv(GL_MAX_TEXTURE_SIZE, &glInfo.max2DTexSize);
+	i32 fbCount;
+	GLXFBConfig* fbList = glXChooseFBConfig(win->display, DefaultScreen(win->display), defaultAttribs, &fbCount);
+	SI_ASSERT(fbCount > 0);
 
-		SI_STOPIF(glInfo.versionSelected.major == 0, glInfo.versionSelected.major = glInfo.versionMax.major);
-		SI_STOPIF(glInfo.versionSelected.minor == 0, glInfo.versionSelected.minor = glInfo.versionMax.minor);
+    if (fbList == NULL) { /* resort to single-buffer if DB not available */
+        i32 fallbackAttribs[] = { GLX_RGBA, GLX_RED_SIZE, 8, GLX_GREEN_SIZE, 8, GLX_BLUE_SIZE, 8, GLX_ALPHA_SIZE, 8, None };
+        si_printf("fallback\n");
+
+        fbList = glXChooseFBConfig(win->display, DefaultScreen(win->display), fallbackAttribs, &fbCount);
+		SI_ASSERT(fbCount > 0);
 	}
+
+    usize fbIndex = 0;
+    i32 bufSamples;
+
+	for_range (i, 0, fbCount) {
+        glXGetFBConfigAttrib(win->display, fbList[i], GLX_SAMPLE_BUFFERS, &bufSamples);
+
+		if ((u32)bufSamples == glInfo.sampleBuffers) {
+            fbIndex = i;
+            break;
+        }
+	}
+
+    GLXFBConfig bestFbc = fbList[fbIndex];
+	XVisualInfo* vi = glXGetVisualFromFBConfig(win->display, bestFbc);
+
+    GLXContext context = glXCreateContext(win->display, vi, NULL, GL_TRUE);
+    glXMakeCurrent(win->display, win->hwnd, context);
+    gl->context = context;
+
+    XFree(fbList);
+    XFree(vi);
+
 #endif
+    if (glInfo.isLoaded == false) {
+        sigl_loadOpenGLAll();
+        glInfo.isLoaded = true;
+
+        glGetIntegerv(GL_MAJOR_VERSION, &glInfo.versionSelected.major);
+        glGetIntegerv(GL_MINOR_VERSION, &glInfo.versionSelected.major);
+
+       if (glInfo.versionSelected.major == 0 && glInfo.versionSelected.minor == 0) {
+            siapp_messageBox(
+                    "OpenGL not present",
+                    "OpenGL version on this system is set to 0.0, meaning it doesn't exist.\n"
+                    "If you have a GPU in your computer, install the latest OpenGL "
+                    "drivers from your GPU's vendor. If not, this application cannot "
+                    "be ran properly on this computer setup.",
+                    SI_MESSAGE_BOX_OK, SI_MESSAGE_BOX_ICON_ERROR
+                    );
+            return false;
+        }
+        glGetIntegerv(GL_MAX_TEXTURE_SIZE, &glInfo.texSizeMax);
+
+        SI_STOPIF(glInfo.versionSelected.major == 0, glInfo.versionSelected.major = glInfo.versionMax.major);
+        SI_STOPIF(glInfo.versionSelected.minor == 0, glInfo.versionSelected.minor = glInfo.versionMax.minor);
+    }
 
 	glEnable(GL_TEXTURE_2D);
 	glEnable(GL_BLEND);
@@ -3673,17 +4425,16 @@ b32 siapp_windowOpenGLInit(siWindow* win, siArea screenSize, u32 maxTexCount, si
 	//glEnable(GL_DEBUG_OUTPUT);
 	//glDebugMessageCallback(DebugCallback, nil);
 
-	glGenVertexArrays(1, &gl->VAO);
+    glGenVertexArrays(1, &gl->VAO);
 	glBindVertexArray(gl->VAO);
 	glGenBuffers(countof(gl->VBOs), gl->VBOs);
 
 	gl->programID = glCreateProgram();
 	SI_ASSERT_MSG(gl->programID != 0, "gl->programID cannot be zero.");
 
-
 	{
 		char updatedVShader[sizeof(defaultVShaderCode) + 20];
-		si_snprintf(updatedVShader, countof(updatedVShader), defaultVShaderCode, win->maxDrawCount);
+		si_snprintf(updatedVShader, countof(updatedVShader), defaultVShaderCode, maxDrawCount);
 
 		i32 vertexShader = si_OpenGLShaderMake(GL_VERTEX_SHADER, updatedVShader);
 		i32 fragmentShader = si_OpenGLShaderMake(GL_FRAGMENT_SHADER, defaultFShaderCode);
@@ -3712,33 +4463,32 @@ b32 siapp_windowOpenGLInit(siWindow* win, siArea screenSize, u32 maxTexCount, si
 	glBindAttribLocation(gl->programID, SI_SHADER_CLR, "clr");
 	glBindAttribLocation(gl->programID, SI_SHADER_ID,  "info");
 
+	GL_BUFFER_MAKE(SI_VBO_POS, gl->vertices,  sizeof(siVec3) * 4 * maxDrawCount);
+	GL_BUFFER_MAKE(SI_VBO_CLR, gl->colors,    sizeof(siVec4) * 4 * maxDrawCount);
+	GL_BUFFER_MAKE(SI_VBO_TEX, gl->texCoords, sizeof(siVec2) * 4 * maxDrawCount);
+	GL_BUFFER_MAKE(SI_VBO_ID,  gl->batchInfo, sizeof(siOpenGLIDs) * maxDrawCount);
 
-	GL_BUFFER_MAKE(SI_VBO_POS, gl->vertices,  sizeof(siVec3) * 4 * win->maxDrawCount);
-	GL_BUFFER_MAKE(SI_VBO_CLR, gl->colors,    sizeof(siVec4) * 4 * win->maxDrawCount);
-	GL_BUFFER_MAKE(SI_VBO_TEX, gl->texCoords, sizeof(siVec2) * 4 * win->maxDrawCount);
-	GL_BUFFER_MAKE(SI_VBO_ID,  gl->batchInfo, (sizeof(u32) * 2) * win->maxDrawCount);
+	gl->CMDs = si_mallocArray(win->alloc, siOpenGLDrawCMD, maxDrawCount);
+	gl->matrices = si_mallocArray(win->alloc, siMatrix, maxDrawCount);
 
-	gl->CMDs = si_mallocArray(win->alloc, siOpenGLDrawCMD, win->maxDrawCount);
-	gl->matrices = si_mallocArray(win->alloc, siMatrix, win->maxDrawCount);
-	gl->indices = si_mallocArray(win->alloc, u16, win->maxDrawCount * 6);
+    typedef u16 siOpenGLIndices[6];
+    siOpenGLIndices* indices = (siOpenGLIndices*)malloc(sizeof(siOpenGLIndices) * maxDrawCount);
 
 	usize k = 0;
-	usize j;
-	for (j = 0; j < (6 * win->maxDrawCount); j += 6) {
-		gl->indices[j + 0] = k + 0;
-		gl->indices[j + 1] = k + 1;
-		gl->indices[j + 2] = k + 2;
+    for_range (i, 0, maxDrawCount) {
+        gl->matrices[i] = rglMatrixIdentity();
 
-		gl->indices[j + 3] = k + 0;
-		gl->indices[j + 4] = k + 2;
-		gl->indices[j + 5] = k + 3;
+		indices[i][0] = k + 0;
+		indices[i][1] = k + 1;
+		indices[i][2] = k + 2;
+
+		indices[i][3] = k + 0;
+		indices[i][4] = k + 2;
+		indices[i][5] = k + 3;
 
 		k += 4;
 	}
 
-	for_range (i, 0, win->maxDrawCount) {
-		gl->matrices[i] = rglMatrixIdentity();
-	}
 
 	// TODO(EimaMei): See if this could be optimized as well.
 	glBindBuffer(GL_ARRAY_BUFFER, gl->VBOs[SI_VBO_POS]);
@@ -3759,22 +4509,23 @@ b32 siapp_windowOpenGLInit(siWindow* win, siArea screenSize, u32 maxTexCount, si
 	glVertexAttribDivisor(SI_SHADER_ID, 1);
 
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl->VBOs[SI_VBO_ELM]);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(u16) * 6 * win->maxDrawCount, gl->indices, GL_STATIC_DRAW);
-	si_allocatorResetFrom(win->alloc, win->alloc->offset - sizeof(u16) * 2 * win->maxDrawCount);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(siOpenGLIndices) * maxDrawCount, indices, GL_STATIC_DRAW);
+    free(indices);
 
-	glUniformMatrix4fv(gl->uniformMvp, win->maxDrawCount, GL_FALSE, gl->matrices->m);
+	glUniformMatrix4fv(gl->uniformMvp, maxDrawCount, GL_FALSE, gl->matrices->m);
 
 	gl->vertexCounter = 0;
 	gl->drawCounter = 0;
-	gl->bgColor = SI_VEC4(0, 0, 0, 1);
+	gl->bgColor = SI_VEC4(1, 1, 1, 1);
 	gl->curTexCoords = SI_VEC2(0, 0);
 	gl->gradientLen = 0;
+    gl->maxVertexCount = maxDrawCount * 4;
 
 	gl->uniformTexture = glGetUniformLocation(gl->programID, "textures");
 	gl->uniformMvp = glGetUniformLocation(gl->programID, "mvp");
 
-	win->atlas = siapp_textureAtlasMake(win, maxTexRes, maxTexCount + 1, SI_RESIZE_DEFAULT);
-	gl->defaultTex = siapp_imageLoadEx(win->atlas, si_buf(siByte, 0xFF, 0xFF, 0xFF, 0xFF), 1, 1, 4);
+	win->atlas = siapp_textureAtlasMake(win, maxTexRes, maxTexCount, SI_RESIZE_DEFAULT);
+	gl->defaultTex = siapp_imageLoadEx(win->atlas, si_buf(siByte, 255, 255, 255, 255), 1, 1, 4);
 	gl->curTex = &gl->defaultTex;
 
 	return true;
@@ -3786,7 +4537,7 @@ void siapp_windowOpenGLRender(siWindow* win) {
 
 	glUseProgram(gl->programID);
 	glBindVertexArray(gl->VAO);
-	//glUniformMatrix4fv(gl->uniformMvp, gl->drawCounter, GL_FALSE, gl->matrices->m);
+	glUniformMatrix4fv(gl->uniformMvp, gl->drawCounter, GL_FALSE, gl->matrices->m);
 
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl->VBOs[SI_VBO_ELM]);
 	glMultiDrawElementsIndirect(GL_TRIANGLE_FAN, GL_UNSIGNED_SHORT, gl->CMDs, gl->drawCounter, 0);
@@ -3813,8 +4564,24 @@ void siapp_windowOpenGLDestroy(siWindow* win) {
 	glDeleteTextures(1, &win->atlas->texID);
 
 	glDeleteProgram(gl->programID);
-	wglDeleteContext(win->render.opengl.context);
+
+#if defined(SIAPP_PLATFORM_API_WIN32)
+    wglDeleteContext(gl->context);
+#elif defined(SIAPP_PLATFORM_API_X11)
+    glXDestroyContext(win->display, gl->context);
+#endif
 }
+
+void siapp_OpenGLVersionSet(siVersion ver) {
+    SI_ASSERT(si_betweenu(ver.major, 0, 4));
+    SI_ASSERT(si_betweenu(ver.minor, 0, 6));
+    glInfo.versionSelected = ver;
+}
+void siapp_OpenGLStencilSet(u32 stencil) { glInfo.stencilSize = stencil; }
+void siapp_OpenGLSamplesSet(u32 samples) { glInfo.sampleBuffers = samples; }
+void siapp_OpenGLStereoSet(b32 stereo) { glInfo.stereo = stereo & 1; }
+void siapp_OpenGLAuxBuffersSet(u32 auxBuffers) { glInfo.auxBuffers = auxBuffers; }
+
 
 
 F_TRAITS(inline)
@@ -3829,6 +4596,7 @@ siMessageBoxResult siapp_messageBoxEx(const siWindow* win, cstring title, usize 
 	SI_ASSERT_NOT_NULL(title);
 	SI_ASSERT_NOT_NULL(message);
 
+#if defined(SIAPP_PLATFORM_API_WIN32)
 	siAllocator* tmp = si_allocatorMake((titleLen + messageLen + 2) * sizeof(u16) + 255);
 
 	siUtf16String wideTitle = si_utf8ToUtf16Str(tmp, title, nil);
@@ -3860,8 +4628,9 @@ siMessageBoxResult siapp_messageBoxEx(const siWindow* win, cstring title, usize 
 	}
 
 	si_allocatorFree(tmp);
+    return res;
+#endif
 
-	return res;
 }
 
 #endif /* SIAPP_IMPLEMENTATION */
