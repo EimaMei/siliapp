@@ -849,9 +849,9 @@ SI_STATIC_ASSERT(sizeof(nil) == sizeof(void*));
 #ifndef SI_DEBUG_TRAP
 	#if defined(_MSC_VER)
 	 	#if _MSC_VER < 1300
-            #define SI_DEBUG_TRAP() __asm int 3
+			#define SI_DEBUG_TRAP() __asm int 3
 		#else
-            #define SI_DEBUG_TRAP() __debugbreak()
+			#define SI_DEBUG_TRAP() __debugbreak()
 		#endif
 	#else
 		#define SI_DEBUG_TRAP() __builtin_trap()
@@ -3090,7 +3090,7 @@ usize si_assertEx(b32 condition, cstring conditionStr, cstring file, i32 line, c
 		va_end(va);
 	}
 
-    SI_DEBUG_TRAP();
+	SI_DEBUG_TRAP();
 	return 1;
 }
 
@@ -4269,7 +4269,7 @@ char* si_u64ToCstrEx(siAllocator* alloc, u64 num, i32 base, usize* outLen) {
 }
 F_TRAITS(inline)
 u64 si_cstrToU64(cstring str) {
-    return si_cstrToU64Ex(str, USIZE_MAX, 10);
+	return si_cstrToU64Ex(str, USIZE_MAX, 10);
 }
 u64 si_cstrToU64Ex(cstring str, usize len, u32 base) {
 	SI_ASSERT_NOT_NULL(str);
@@ -4277,10 +4277,10 @@ u64 si_cstrToU64Ex(cstring str, usize len, u32 base) {
 	u64 res = 0;
 	while (len != 0) {
 		SI_STOPIF(*str == '\0', break);
-        SI_ASSERT_MSG(si_between(*str, '0', '9'), "Attempted to use `si_cstrToU64` with a string that contains non numbers.");
+		SI_ASSERT_MSG(si_between(*str, '0', '9'), "Attempted to use `si_cstrToU64` with a string that contains non numbers.");
 
-        res *= base;
-        res += (*str - '0');
+		res *= base;
+		res += (*str - '0');
 		len -= 1;
 		str += 1;
 	}
