@@ -1,13 +1,15 @@
 #include <siliapp.h>
+#define DISABLE_SECOND_WINDOW 0
 
-
-void secondWindowLoop(rawptr alloc);
+#if DISABLE_SECOND_WINDOW != 1
+void secondWindowLoop(const siWindow* firstWindow);
+#endif
 
 #define CURSOR_W 16
 #define CURSOR_H 32
 
 int main(void) {
-	siAllocator* alloc = si_allocatorMake(SI_KILO(8));
+	siAllocator* alloc = si_allocatorMake(SI_KILO(4));
 
 	siWindow* win = siapp_windowMake(
 		alloc, "Example window | ĄČĘĖĮŠŲ | 「ケケア」",
@@ -17,6 +19,7 @@ int main(void) {
 	siapp_windowBackgroundSet(win, SI_RGB(0, 0, 0));
 
 	siDropEvent drops[2];
+
 	siColor sideClrs[countof(drops)] = {SI_RGBA(255, 0, 0, 128), SI_RGBA(0, 255, 0, 128)};
 	i32 widthHalf = win->originalSize.width / 2;
 
@@ -43,8 +46,10 @@ int main(void) {
 	siCursorType curCursor = SI_CURSOR_DEFAULT,
 				 newCursor = customCursor;
 
-	siThread t = si_threadCreate(secondWindowLoop, alloc);
+#if DISABLE_SECOND_WINDOW != 1
+	siThread t = si_threadCreate(secondWindowLoop, win);
 	si_threadStart(&t);
+#endif
 
 	while (siapp_windowIsRunning(win) && !siapp_windowKeyClicked(win, SK_ESC)) {
 		siapp_windowUpdate(win, true);
@@ -105,14 +110,16 @@ int main(void) {
 					siDropEntry entry;
 					siDropHandle handle = siapp_dropEventHandle(*drop);
 
+                    usize x = 0;
 					while (siapp_dropEventPollEntry(&handle, &entry)) {
-						si_printf("%i.%i: %s %i\n", i + 1, handle.curIndex, entry.path, entry.len);
+						si_printf("%i.%i: %s %i\n", i + 1, x, entry.path, entry.len);
+                        x += 1;
 					}
 					sideClrs[i].a -= 64;
 					break;
 				}
 			}
-			drop->state = 0;
+            siapp_dropEventEnd(drop);
 
 			siapp_drawRect(
 				win,
@@ -142,20 +149,21 @@ int main(void) {
 		siapp_windowDragAreaEnd(drops[i]);
 	}
 	siapp_windowClose(win);
-
-	while (t.isRunning) { si_sleep(1000); }
 	si_allocatorFree(alloc);
 }
 
 
-void secondWindowLoop(rawptr alloc) {
+#if DISABLE_SECOND_WINDOW != 1
+void secondWindowLoop(const siWindow* firstWindow) {
+    siAllocator* alloc = si_allocatorMake(SI_KILO(1));
+
 	siWindow* win = siapp_windowMakeEx(
 		alloc, "Second window", SI_POINT(200, 200), SI_AREA(400, 400),
 		SI_WINDOW_RESIZABLE | SI_WINDOW_RENDERING_OPENGL, 2, 0, SI_AREA(0, 0)
 	);
 	siapp_windowBackgroundSet(win, SI_RGB(113, 57, 173));
 
-	while (siapp_windowIsRunning(win)) {
+	while (siapp_windowIsRunning(win) && siapp_windowIsRunning(firstWindow)) {
 		siapp_windowUpdate(win, true);
 
 		siColor gradient[3] = {
@@ -178,5 +186,6 @@ void secondWindowLoop(rawptr alloc) {
 
 	siapp_windowClose(win); // We must close the window in the same thread where
 							// the window was created at!
+    si_allocatorFree(alloc);
 }
-
+#endif

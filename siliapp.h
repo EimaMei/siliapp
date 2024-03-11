@@ -114,10 +114,8 @@ extern "C" {
 	#endif
 #endif
 
-#if defined(SIAPP_PLATFORM_API_WIN32)
-    #define SI_MAX_PATH_LEN MAX_PATH // TODO RELPACE
-#else
-    #define SI_MAX_PATH_LEN NAME_MAX
+#ifndef SI_MAX_PATH_LEN
+    #define SI_MAX_PATH_LEN 260 // TODO RELPACE
 #endif
 
 typedef SI_ENUM(b32, siWindowArg) {
@@ -255,6 +253,10 @@ typedef struct {
 	b32 windowMove          : 1;
 	b32 windowFocusChange   : 1;
 } siEventType;
+SI_STATIC_ASSERT(sizeof(siEventType) == 4); /* NOTE(EimaMei): If the type becomes
+                                               larger than 4 bytes, parts of the
+                                               code base should be reviewed in
+                                               case of possible bugs. */
 
 typedef SI_ENUM(u32, siEventTypeEnum) {
 	SI_EVENT_CLOSE = 1,
@@ -402,6 +404,7 @@ typedef struct {
     u32 maxVertexCount;
 } siWinRenderingCtxOpenGL;
 
+
 typedef struct {
 	siAllocator* alloc;
 	siTextureAtlas* atlas;
@@ -434,6 +437,8 @@ typedef struct {
 	b32 cursorSet;
 #if defined(SIAPP_PLATFORM_API_X11)
     Cursor __x11BlankCursor;
+    rawptr __x11DndHead;
+    rawptr __x11DndPrev;
 #endif
 } siWindow;
 
@@ -594,8 +599,11 @@ typedef struct {
 	IDataObject* pDataObj;
 	siWindow* win;
 	HWND subHwnd;
+#elif defined(SIAPP_PLATFORM_API_X11)
+    siRect rect;
+    char* data;
+    struct siDropEvent* next;
 #endif
-
 	siDropState state;
 } siDropEvent;
 
@@ -603,18 +611,20 @@ typedef struct {
 	/* Actual length of the path. */
 	usize len;
 	/* */
-	char path[256];
+	char path[SI_MAX_PATH_LEN];
 } siDropEntry;
 
 typedef struct {
 	/* */
 	u32 len;
 	/* */
-	u32 curIndex;
 
 #if defined(SIAPP_PLATFORM_API_WIN32)
-	/* */
 	STGMEDIUM stgm;
+    u32 curIndex;
+#elif defined(SIAPP_PLATFORM_API_X11)
+    char* __x11Data;
+    u32 curIndex;
 #endif
 } siDropHandle;
 
@@ -1032,6 +1042,12 @@ intern u32 SI_WINDOWS_NUM = 0;
         SK_TO_INT(e->keys[SK__EVENT]) |= SI_BIT(6); \
         e->curMouse = type; \
     } while (0)
+
+
+F_TRAITS(inline)
+b32 siapp__collideRectPoint(siRect r, siPoint p) {
+    return (p.x >= r.x &&  p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height);
+}
 
 
 F_TRAITS(intern)
@@ -1459,6 +1475,7 @@ HRESULT IDropTarget_Drop(IDropTarget* target, IDataObject* pDataObj,
 #elif defined(SIAPP_PLATFORM_API_X11)
 
 intern Display* SI_X11_DISPLAY = nil;
+
 intern Atom WM_DELETE_WINDOW,
             NET_WM_NAME,
             NET_WM_ICON,
@@ -1471,6 +1488,18 @@ intern Atom WM_DELETE_WINDOW,
             MULTIPLE,
             ATOM_PAIR,
             CLIPBOARD_MANAGER;
+
+intern Atom XdndAware,
+            XdndTypeList,
+            XdndSelection,
+            XdndEnter,
+            XdndPosition,
+            XdndStatus,
+            XdndLeave,
+            XdndDrop,
+            XdndFinished,
+            XdndActionCopy;
+
 
 intern Cursor SI_X11_CURSORS[4] = {0};
 intern siWindow* SI_ROOT_WINDOW = nil;
@@ -1745,7 +1774,8 @@ siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
     XSetWindowAttributes wa;
     wa.event_mask =
         KeyPressMask | KeyReleaseMask | ButtonPressMask | ButtonReleaseMask |
-        PointerMotionMask | StructureNotifyMask | FocusChangeMask;
+        PointerMotionMask | StructureNotifyMask | FocusChangeMask | EnterWindowMask |
+        LeaveWindowMask;
 
     win->hwnd = XCreateWindow(
         win->display, XDefaultRootWindow(win->display),
@@ -1764,6 +1794,7 @@ siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
     SI_WINDOWS_NUM += 1;
     SI_ROOT_WINDOW = win;
     win->__x11BlankCursor = 0;
+    win->__x11DndHead = (rawptr)USIZE_MAX;
 #endif
 	win->alloc = alloc;
 	win->arg = arg;
@@ -1840,7 +1871,7 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 		GetCursorPos((POINT*)&out->mouseRoot);
 		siPoint point = out->mouseRoot;
 		siRect rect = SI_RECT_PA(out->windowPos, out->windowSize);
-		out->mouseInside = (point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height);
+		out->mouseInside = siapp__collideRectPoint(rect, point);
 	}
 
 	MSG msg = {0};
@@ -1853,6 +1884,13 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 	}
 #elif defined (SIAPP_PLATFORM_API_X11)
     SI_ROOT_WINDOW = win;
+
+    typedef struct {
+        long source, version;
+        i32 format;
+    } XDND; /* data structure for xdnd events */
+    static XDND xdnd;
+    static siDropEvent* curNode = nil;
 
 
     XEvent event;
@@ -1871,6 +1909,201 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
             case ClientMessage: {
                 SI_CHECK_WIN(event.xclient, win->hwnd);
                 out->type.isClosed = (event.xclient.data.l[0] == (long)WM_DELETE_WINDOW);
+
+				/* NOTE(EimaMei): All of this is from 'https://github.com/ColleagueRiley/RGFW/blob/main/RGFW.h'. */
+                if (event.xclient.message_type == XdndEnter) {
+				    u64 count;
+                    b32 formFree = 0;
+				    Atom* formats = (Atom*)0;
+				    Bool list = event.xclient.data.l[1] & 1;
+
+				    xdnd.source  = event.xclient.data.l[0];
+				    xdnd.version = event.xclient.data.l[1] >> 24;
+				    xdnd.format  = None;
+
+				    if (xdnd.version > 5)
+				    	break;
+
+				    if (list) {
+				    	Atom actualType;
+				    	i32 actualFormat;
+				    	u64 bytesAfter;
+
+				    	XGetWindowProperty(
+                            win->display, xdnd.source, XdndTypeList,
+				    		0, INT64_MAX, False, 4,
+				    		&actualType, &actualFormat, &count, &bytesAfter,
+				    		(u8**)&formats
+                        );
+				    }
+				    else {
+				    	formats = (Atom*)malloc(event.xclient.data.l[2] + event.xclient.data.l[3] + event.xclient.data.l[4]);
+				    	formFree = 1;
+
+				    	count = 0;
+
+				    	if (event.xclient.data.l[2] != None)
+				    		formats[count++] = event.xclient.data.l[2];
+				    	if (event.xclient.data.l[3] != None)
+				    		formats[count++] = event.xclient.data.l[3];
+				    	if (event.xclient.data.l[4] != None)
+				    		formats[count++] = event.xclient.data.l[4];
+				    }
+
+				    u32 i;
+				    for (i = 0;  i < count;  i++) {
+				    	char* name = XGetAtomName(win->display, formats[i]);
+
+				    	char* links[2] = {(char*)(const char*)"text/uri-list", (char*)(const char*)"text/plain"};
+				    	for (; 1; name++) {
+				    		u32 j;
+				    		for (j = 0; j < 2; j++) {
+				    			if (*links[j] != *name) {
+				    				links[j] = (char*)(const char*)"\1";
+				    				continue;
+				    			}
+
+				    			if (*links[j] == '\0' && *name == '\0')
+				    				xdnd.format = formats[i];
+
+				    			if (*links[j] != '\0' && *links[j] != '\1')
+				    				links[j]++;
+				    		}
+
+				    		if (*name == '\0')
+				    			break;
+				    	}
+				    }
+
+				    if (list && formats) {
+				    	XFree(formats);
+				    	formats = (Atom*)0;
+				    }
+				    else if (formFree && formats != (Atom*)0) {
+				    	free(formats);
+
+				    	formats = (Atom*)0;
+				    	formFree = 1;
+				    }
+                }
+                else if (event.xclient.message_type == XdndPosition) {
+                    const i32 xabs = (event.xclient.data.l[2] >> 16) & 0xffff;
+				    const i32 yabs = (event.xclient.data.l[2]) & 0xffff;
+				    Window dummy;
+				    i32 xpos, ypos;
+
+				    if (xdnd.version > 5)
+				    	break;
+
+				    XTranslateCoordinates(
+                        win->display, XDefaultRootWindow(win->display), win->hwnd,
+                        xabs, yabs, &xpos, &ypos, &dummy
+                    );
+
+                    siPoint pos = SI_POINT(xpos, ypos);
+                    out->type.mouseMove = true;
+                    out->mouse = pos;
+
+                    siDropEvent* node = win->__x11DndHead;
+
+                    while (node != nil) { // TODO: optimize this
+                        if (siapp__collideRectPoint(node->rect, pos)) {
+                            if (curNode != nil && curNode != node) {
+                                curNode->state = SI_DRAG_LEAVE;
+                                curNode = nil;
+                            }
+                            break;
+                        }
+                        node = (siDropEvent*)node->next;
+                    }
+                    node->state = (curNode == nil) ? SI_DRAG_ENTER : SI_DRAG_OVER;
+                    curNode = node;
+
+
+				    XEvent reply = { ClientMessage };
+				    reply.xclient.window = xdnd.source;
+				    reply.xclient.message_type = XdndStatus;
+				    reply.xclient.format = 32;
+				    reply.xclient.data.l[0] = win->hwnd;
+				    reply.xclient.data.l[2] = 0;
+				    reply.xclient.data.l[3] = 0;
+
+				    if (xdnd.format) {
+				    	reply.xclient.data.l[1] = 1;
+				    	if (xdnd.version >= 2)
+				    		reply.xclient.data.l[4] = XdndActionCopy;
+				    }
+
+				    XSendEvent(win->display, xdnd.source, False, NoEventMask, &reply);
+				    XFlush(win->display);
+                }
+                else if (event.xclient.message_type == XdndDrop) {
+                    if (xdnd.version > 5)
+                        break;
+
+                    if (xdnd.format) {
+                        Time time = (xdnd.version >= 1)
+                            ? event.xclient.data.l[2]
+                            : CurrentTime;
+
+                        XConvertSelection(
+                            win->display, XdndSelection, xdnd.format,
+                            XdndSelection, win->hwnd, time
+                        );
+                    }
+                    else if (xdnd.version >= 2) {
+                        XEvent reply = { ClientMessage };
+                        reply.xclient.window = xdnd.source;
+                        reply.xclient.message_type = XdndFinished;
+                        reply.xclient.format = 32;
+                        reply.xclient.data.l[0] = win->hwnd;
+                        reply.xclient.data.l[1] = 0;
+                        reply.xclient.data.l[2] = None;
+
+                        XSendEvent(win->display, xdnd.source, False, NoEventMask, &reply);
+                        XFlush(win->display);
+                    }
+                }
+                else if (event.xclient.message_type == XdndLeave) {
+                    curNode->state = SI_DRAG_LEAVE;
+                    curNode = nil;
+                }
+
+                break;
+            }
+            case SelectionNotify: {
+                SI_STOPIF(event.xselection.property != XdndSelection, break);
+                SI_CHECK_WIN(event.xclient, win->hwnd);
+
+                char* data;
+                u64 result;
+
+                Atom actualType;
+                i32 actualFormat;
+                u64 bytesAfter;
+
+                XGetWindowProperty(
+                    win->display, event.xselection.requestor, event.xselection.property,
+                    0, INT64_MAX, False, event.xselection.target,
+                    &actualType, &actualFormat, &result, &bytesAfter, (u8**)&data
+                );
+                curNode->state = SI_DRAG_DROP;
+                curNode->data = data;
+                curNode = nil;
+
+                if (xdnd.version >= 2) {
+                    XEvent reply = { ClientMessage };
+                    reply.xclient.window = xdnd.source;
+                    reply.xclient.message_type = XdndFinished;
+                    reply.xclient.format = 32;
+                    reply.xclient.data.l[0] = win->hwnd;
+                    reply.xclient.data.l[1] = result;
+                    reply.xclient.data.l[2] = XdndActionCopy;
+
+                    XSendEvent(win->display, xdnd.source, False, NoEventMask, &reply);
+                    XFlush(win->display);
+                }
+
                 break;
             }
             case KeyPress: {
@@ -1981,7 +2214,7 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
                 SI_CHECK_WIN(event.xconfigure, win->hwnd);
                 siPoint pos = SI_POINT(event.xconfigure.x, event.xconfigure.y);
 
-                if (SI_CSTR_U64(&pos) != 0 && !si_pointCmp(out->windowPos, pos)) {
+                if (SI_TO_U64(&pos) != 0 && !si_pointCmp(out->windowPos, pos)) {
                     out->type.windowMove = true;
                     out->windowPos = pos;
                 }
@@ -2129,7 +2362,7 @@ b32 siapp_windowEventPoll(const siWindow* win, siEventTypeEnum* out) {
 	SI_ASSERT_NOT_NULL(win);
 	SI_ASSERT_NOT_NULL(out);
 
-	u32 event = SI_CSTR_U16(&win->e.type);
+	u32 event = SI_TO_U32(&win->e.type);
 	u32 bit = *out;
 	b32 res = false;
 
@@ -2298,7 +2531,7 @@ void siapp_cursorFree(siCursorType cursor) {
 	usize handle = -cursor;
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	DestroyCursor((HCURSOR)handle);
-#else
+#elif defined(SIAPP_PLATFORM_API_X11)
     XFreeCursor(SI_ROOT_WINDOW->display, handle);
 #endif
 }
@@ -2343,11 +2576,11 @@ void siapp_windowDragAreaMake(siWindow* win, siRect rect, siDropEvent* out) {
 	GetClassNameW(win->hwnd, buf, countof(buf));
 
 	HWND subHwnd = CreateWindowW(
-			buf,
-			L"", WS_VISIBLE | WS_CHILD,
-			rect.x, rect.y, rect.width, rect.height,
-			win->hwnd, 0, nil, nil
-			);
+		buf,
+		L"", WS_VISIBLE | WS_CHILD,
+		rect.x, rect.y, rect.width, rect.height,
+		win->hwnd, 0, nil, nil
+	);
 	SI_ASSERT_NOT_NULL(subHwnd);
 
 	SetWindowSubclass(subHwnd, &WndProcDropFile, 0, (DWORD_PTR)out);
@@ -2371,6 +2604,41 @@ void siapp_windowDragAreaMake(siWindow* win, siRect rect, siDropEvent* out) {
 
 	OleInitialize(nil);
 	RegisterDragDrop(subHwnd, (LPDROPTARGET)&out->target);
+#elif defined(SIAPP_PLATFORM_API_X11)
+    if (win->__x11DndHead == (rawptr)USIZE_MAX) {
+        XdndAware         = XInternAtom(SI_X11_DISPLAY, "XdndAware",         False);
+        XdndTypeList      = XInternAtom(SI_X11_DISPLAY, "XdndTypeList",      False);
+        XdndSelection     = XInternAtom(SI_X11_DISPLAY, "XdndSelection",     False);
+
+        /* client messages */
+        XdndEnter         = XInternAtom(SI_X11_DISPLAY, "XdndEnter",         False);
+        XdndPosition      = XInternAtom(SI_X11_DISPLAY, "XdndPosition",      False);
+        XdndStatus        = XInternAtom(SI_X11_DISPLAY, "XdndStatus",        False);
+        XdndLeave         = XInternAtom(SI_X11_DISPLAY, "XdndLeave",         False);
+        XdndDrop          = XInternAtom(SI_X11_DISPLAY, "XdndDrop",          False);
+        XdndFinished      = XInternAtom(SI_X11_DISPLAY, "XdndFinished",      False);
+
+        /* actions */
+        XdndActionCopy    = XInternAtom(SI_X11_DISPLAY, "XdndActionCopy",    False);
+        const Atom version = 5;
+
+        XChangeProperty(
+            win->display, win->hwnd,
+            XdndAware, 4, 32,
+            PropModeReplace, (u8*)&version, 1
+        );
+
+        win->__x11DndHead = win->__x11DndPrev = out;
+    }
+
+    siDropEvent* prev = win->__x11DndPrev;
+    prev->next = (struct siDropEvent*)out;
+    win->__x11DndPrev = out;
+
+    out->rect = rect;
+    out->state = 0;
+    out->next = nil;
+    out->data = nil;
 #endif
 }
 void siapp_windowDragAreaEnd(siDropEvent event) {
@@ -2431,7 +2699,6 @@ void siapp_mouseShow(b32 show) {
 #endif
 }
 
-#include <limits.h>
 usize siapp_clipboardTextGet(char* outBuffer, usize capacity) {
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	b32 res = OpenClipboard(nil);
@@ -2559,7 +2826,7 @@ b32 siapp_clipboardTextSet(cstring text) {
 			i32 actualFormat;
 			u64 count, bytesAfter;
 
-			XGetWindowProperty((Display*)win->display, request->requestor, request->property, 0, LONG_MAX, False, ATOM_PAIR,  &actualType, &actualFormat, &count, &bytesAfter, (u8**) &targets);
+			XGetWindowProperty((Display*)win->display, request->requestor, request->property, 0, INT64_MAX, False, ATOM_PAIR,  &actualType, &actualFormat, &count, &bytesAfter, (u8**) &targets);
 
 			u64 i;
 			for (i = 0;  i < count;  i += 2) {
@@ -2579,7 +2846,7 @@ b32 siapp_clipboardTextSet(cstring text) {
 									8,
 									PropModeReplace,
 									(u8 *) selectionString,
-									si_stringLen(text));
+									si_cstrLen(text));
 				}
 				else
 					targets[i + 1] = None;
@@ -2654,23 +2921,49 @@ usize siapp_clipboardTextLen(void) {
 
 
 siDropHandle siapp_dropEventHandle(siDropEvent event) {
+    SI_ASSERT_MSG(event.state == SI_DRAG_DROP, "This function should only get called after a confirmed successful drop.");
+
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	FORMATETC fmte = {CF_HDROP, nil, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
 	STGMEDIUM stgm;
 	IDataObject* pDataObj = event.pDataObj;
 
-	siDropHandle res = {0};
 
 	b32 err = pDataObj->lpVtbl->GetData(pDataObj, &fmte, &stgm) == S_OK;
 	SI_STOPIF(!err, goto end);
 
 	HDROP hdrop = (HDROP)stgm.hGlobal;
-	res.stgm = stgm;
-	res.len = DragQueryFileW(hdrop, 0xFFFFFFFF, NULL, 0);
 
+    siDropHandle res;
+    res.curIndex = 0;
+	res.len = DragQueryFileW(hdrop, 0xFFFFFFFF, NULL, 0);
+    res.stgm = stgm;
 end:
-	return res;
+#elif defined(SIAPP_PLATFORM_API_X11)
+    SI_ASSERT_NOT_NULL(event.data);
+
+    char* data = event.data;
+    usize len = 0;
+    usize index = countof("file://") - 1;
+    while (true) {
+        if (data[index] == '\0') {
+            break;
+        }
+
+        if (SI_TO_U16(&data[index]) == SI_TO_U16("\r\n")) {
+            len += 1;
+            index += countof("file://") - 1 + 2;
+            continue;
+        }
+        index += 1;
+    }
+
+    siDropHandle res;
+    res.curIndex = 0;
+    res.len = len;
+    res.__x11Data = event.data;
 #endif
+    return res;
 }
 b32 siapp_dropEventPollEntry(siDropHandle* handle, siDropEntry* entry) {
 #if defined(SIAPP_PLATFORM_API_WIN32)
@@ -2680,7 +2973,7 @@ b32 siapp_dropEventPollEntry(siDropHandle* handle, siDropEntry* entry) {
 	}
 
 	siAllocator out = si_allocatorMakeTmp(entry->path, sizeof(entry->path));
-	siAllocator* stack = si_allocatorMakeStack(SI_KILO(4));
+	siAllocator* stack = si_allocatorMakeStack(SI_KILO(8));
 	u16* curPtr = (u16*)si_allocatorCurPtr(stack);
 
 	DragQueryFileW(handle->stgm.hGlobal, handle->curIndex, curPtr, 256);
@@ -2688,6 +2981,38 @@ b32 siapp_dropEventPollEntry(siDropHandle* handle, siDropEntry* entry) {
 	handle->curIndex += 1;
 
 	return true;
+#else
+	if (handle->__x11Data[handle->curIndex] == '\0') {
+        XFree(handle->__x11Data);
+		return false;
+	}
+
+    handle->curIndex += countof("file://") - 1;
+    char* data = &handle->__x11Data[handle->curIndex];
+    usize len = 0;
+
+    while (true) {
+        if (SI_TO_U16(&data[len]) == SI_TO_U16("\r\n")) {
+            entry->path[len] = '\0';
+            break;
+        }
+        else if (data[len] == '%') { /* NOTE(EimaMei): Detected a '%XX' in the path. */
+            char x = si_cstrToU64Ex(&data[len + 1], 2, 16);
+            entry->path[len] = x;
+
+            len += 1;
+            data += 2;
+            handle->curIndex += 2;
+            continue;
+        }
+        entry->path[len] = data[len];
+        len += 1;
+    }
+
+    entry->len = len;
+    handle->curIndex += len + 2;
+
+    return true;
 #endif
 }
 F_TRAITS(inline)

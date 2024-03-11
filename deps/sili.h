@@ -659,22 +659,22 @@ SI_STATIC_ASSERT(sizeof(nil) == sizeof(void*));
 /* type - TYPE | value - EXPRESSION
  * Bit cast converts the value with the same size types. */
 #define si_transmute(type, value) ((union { typeof(value) in; type out; }){value}.out)
-/* text - cstring
- * Converts a cstring into an u8. */
-#define SI_CSTR_U8(text)  (*si_cast(u8*, text))
-/* text - cstring
- * Converts a cstring into an u16. */
-#define SI_CSTR_U16(text) (*si_cast(u16*, text))
-/* text - cstring
- * Converts a cstring into an u32. */
-#define SI_CSTR_U32(text) (*si_cast(u32*, text))
-/* text - cstring
- * Converts a cstring into an u64. */
-#define SI_CSTR_U64(text) (*si_cast(u64*, text))
-/* text - cstring | bytes - usize
- * Converts a cstring into an u64 containing 'bytes' amount of data from the string.
- * Maximum byte count is 8. */
-#define SI_CSTR_UBYTE(text, bytes) si_u64FromPtr(text, bytes)
+/* ptr - rawptr
+ * Converts the pointer's value into an u8. */
+#define SI_TO_U8(text)  (*si_cast(u8*, ptr))
+/* ptr - rawptr
+ * Converts the pointer's value into an u16. */
+#define SI_TO_U16(ptr) (*si_cast(u16*, ptr))
+/* ptr - rawptr
+ * Converts the pointer's value into an u32. */
+#define SI_TO_U32(ptr) (*si_cast(u32*, ptr))
+/* ptr - rawptr
+ * Converts the pointer's value into an u64. */
+#define SI_TO_U64(ptr) (*si_cast(u64*, ptr))
+/* ptr - rawptr | bytes - usize
+ * Converts the pointer's value into an u64 containing specified amount of bytes
+ * from it. Maximum byte count is 8. */
+#define SI_TO_UBYTE(ptr, bytes) si_u64FromPtr(ptr, bytes)
 
 
 /*
@@ -991,7 +991,7 @@ typedef struct { i32 x, y; } siPoint;
 #define SI_POINT(x, y) ((siPoint){x, y})
 /* p1 - siPoint | p2 - siPoint
  * Does a quick comparison if the two points are different. */
-#define si_pointCmp(p1, p2) (SI_CSTR_U64(&p1) == SI_CSTR_U64(&p2))
+#define si_pointCmp(p1, p2) (SI_TO_U64(&p1) == SI_TO_U64(&p2))
 
 /* An XY point structure. Both are isize integers. */
 typedef struct { isize x, y; } siPointS;
@@ -1775,17 +1775,17 @@ b32 si_cstrEqual(cstring str1, cstring str2);
 b32 si_cstrEqualLen(cstring str1, usize str1Len, cstring str2, usize str2Len);
 
 /* Returns an unsigned 64-bit integer form of the NULL-terminated C-string.
- * The string must be a number. */
+ * The string _must_ be a number. */
 u64 si_cstrToU64(cstring str);
 /* Returns an unsigned 64-bit integer form of the C-string with specified length.
- * The string must be a number. */
-u64 si_cstrToU64Len(cstring str, usize len);
+ * The string _must_ be a number. */
+u64 si_cstrToU64Ex(cstring str, usize len, u32 base);
 /* Returns a signed 64-bit integer form of the NULL-terminated C-string.
- * The string must be a number. */
+ * The string _must_ be a number. */
 i64 si_cstrToI64(cstring str);
 /* Returns an signed 64-bit integer form of the C-string with specified length.
- * The string must be a number. */
-u64 si_cstrToI64Len(cstring str, usize len);
+ * The string _must_ be a number. */
+u64 si_cstrToI64Ex(cstring str, usize len, u32 base);
 /* TODO(EimaMei): f64 si_cstr_to_f64(cstring str); */
 
 /* Creates a string from the given unsigned number. By default the function assumes
@@ -4267,33 +4267,20 @@ char* si_u64ToCstrEx(siAllocator* alloc, u64 num, i32 base, usize* outLen) {
 	SI_STOPIF(outLen != nil, *outLen = len);
 	return res;
 }
+F_TRAITS(inline)
 u64 si_cstrToU64(cstring str) {
-	SI_ASSERT_NOT_NULL(str);
-
-	u64 res = 0;
-	char cur;
-	while ((cur = *str++)) {
-		if (si_between(cur, '0', '9')) {
-			res = (res * 10) + (cur - '0');
-		}
-		else {
-			SI_ASSERT_MSG(si_between(cur, '0', '9'), "Attempted to use `si_cstrToU64` with a string that contains non numbers.");
-		}
-	}
-
-	return res;
+    return si_cstrToU64Ex(str, USIZE_MAX, 10);
 }
-u64 si_cstrToU64Len(cstring str, usize len) {
+u64 si_cstrToU64Ex(cstring str, usize len, u32 base) {
 	SI_ASSERT_NOT_NULL(str);
 /*TODO(EimaMei): Update this to include other bases */
 	u64 res = 0;
 	while (len != 0) {
-		if (si_between(*str, '0', '9')) {
-			res = (res * 10) + (*str - '0');
-		}
-		else {
-			SI_ASSERT_MSG(si_between(*str, '0', '9'), "Attempted to use `si_cstrToU64` with a string that contains non numbers.");
-		}
+		SI_STOPIF(*str == '\0', break);
+        SI_ASSERT_MSG(si_between(*str, '0', '9'), "Attempted to use `si_cstrToU64` with a string that contains non numbers.");
+
+        res *= base;
+        res += (*str - '0');
 		len -= 1;
 		str += 1;
 	}
@@ -4364,58 +4351,20 @@ char* si_f64ToCstrEx(siAllocator* alloc, f64 num, i32 base, u32 afterPoint,
 }
 
 i64 si_cstrToI64(cstring str) {
-	SI_ASSERT_NOT_NULL(str);
-
-	i64 res = 0;
-	char cur;
-	b32 negative = false;
-
-	if ((*str) == '-') {
-		negative = true;
-		str++;
-	}
-
-	while ((cur = *str++)) {
-		if (cur >= '0' && cur <= '9') {
-			res = (res * 10) + (cur - '0');
-		}
-		else {
-			SI_ASSERT_MSG(!(cur >= '0' && cur <= '9'), "Attempted to use `si_cstrToI64` with a string that contains non numbers.");
-		}
-	}
-
-	if (negative) {
-		res = -res;
-	}
-
-	return res;
+	return si_cstrToI64Ex(str, USIZE_MAX, 10);
 }
-u64 si_cstrToI64Len(cstring str, usize len) {
+u64 si_cstrToI64Ex(cstring str, usize len, u32 base) {
 	SI_ASSERT_NOT_NULL(str);
 
-	i64 res = 0;
-	b32 negative = false;
+	i32 modifier = 1;
 
 	if ((*str) == '-') {
-		negative = true;
+		modifier = -1;
 		str += 1;
 		len -= 1;
 	}
-
-	while (len != 0) {
-		if (*str >= '0' && *str <= '9') {
-			res = (res * 10) + (*str - '0');
-		}
-		else {
-			SI_ASSERT_MSG(!(*str >= '0' && *str <= '9'), "Attempted to use `si_cstrToI64` with a string that contains non numbers.");
-		}
-		len -= 1;
-		str += 1;
-	}
-
-	if (negative) {
-		res = -res;
-	}
+	i64 res = si_cstrToU64Len(str, len, base);
+	res *= modifier; /* NOTE(EimaMei): Negatifies the number, if needed. */
 
 	return res;
 }
@@ -6332,7 +6281,7 @@ SI_GOTO_LABEL(GOTO_PRINT_SWITCH)
 				}
 				SET_FMT_PTR(x, fmtPtr);
 
-				usize count = si_cstrToU64Len((char*)stack->ptr, buf - stack->ptr);
+				usize count = si_cstrToU64Ex((char*)stack->ptr, buf - stack->ptr, 10);
 				*ptrToVar = count;
 				goto GOTO_PRINT_SWITCH;
 			}
