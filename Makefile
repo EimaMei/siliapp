@@ -22,7 +22,7 @@ ifeq ($(OS),WINDOWS)
 
 else
 	EXE = $(OUTPUT)/$(NAME)
-	LIBS = -lX11 -lXcursor -lGL -lm
+	LIBS = -lX11 -lXcursor -lXrandr -lGL -lm
 endif
 
 # 'make'

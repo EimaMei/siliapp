@@ -1013,6 +1013,9 @@ typedef struct { i32 width, height; } siArea;
 /* width - i32 | height - i32
  * Macro to define a signed area. */
 #define SI_AREA(width, height) ((siArea){width, height})
+/* p1 - siArea | p2 - siArea
+ * Does a quick comparison if the two areas are different. */
+#define si_areaCmp(a1, a2) (SI_TO_U64(&a1) == SI_TO_U64(&a2))
 
 /* Poistion and area structure. */
 typedef struct { i32 x, y, width, height; } siRect;
@@ -4363,7 +4366,7 @@ u64 si_cstrToI64Ex(cstring str, usize len, u32 base) {
 		str += 1;
 		len -= 1;
 	}
-	i64 res = si_cstrToU64Len(str, len, base);
+	i64 res = si_cstrToU64Ex(str, len, base);
 	res *= modifier; /* NOTE(EimaMei): Negatifies the number, if needed. */
 
 	return res;

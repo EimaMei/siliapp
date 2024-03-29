@@ -1,5 +1,5 @@
 #include <siliapp.h>
-#define DISABLE_SECOND_WINDOW 0
+#define DISABLE_SECOND_WINDOW 1
 
 #if DISABLE_SECOND_WINDOW != 1
 void secondWindowLoop(const siWindow* firstWindow);
@@ -14,7 +14,7 @@ int main(void) {
 	siWindow* win = siapp_windowMake(
 		alloc, "Example window | ĄČĘĖĮŠŲ | 「ケケア」",
 		SI_AREA(0, 0), SI_WINDOW_DEFAULT | SI_WINDOW_OPTIMAL_SIZE | SI_WINDOW_SCALING,
-		4, 0, SI_AREA(0, 0)
+		8, 1, SI_AREA(1024, 1024)
 	);
 	siapp_windowBackgroundSet(win, SI_RGB(0, 0, 0));
 
@@ -45,6 +45,8 @@ int main(void) {
 
 	siCursorType curCursor = SI_CURSOR_DEFAULT,
 				 newCursor = customCursor;
+	u32 curRender = SI_WINDOW_RENDERING_OPENGL,
+		newRender = SI_WINDOW_RENDERING_CPU;
 
 #if DISABLE_SECOND_WINDOW != 1
 	siThread t = si_threadCreate(secondWindowLoop, win);
@@ -89,6 +91,11 @@ int main(void) {
 				case SK_T: {
 					siapp_windowCursorSet(win, newCursor);
 					si_swap(curCursor, newCursor);
+					break;
+				}
+				case SK_C: {
+					siapp_windowRendererChange(win, newRender);
+					si_swap(curRender, newRender);
 					break;
 				}
 			}
@@ -146,7 +153,7 @@ int main(void) {
     siapp_cursorFree(customCursor);
 
 	for_range (i, 0, countof(drops)) {
-		siapp_windowDragAreaEnd(drops[i]);
+		siapp_windowDragAreaEnd(win, &drops[i]);
 	}
 	siapp_windowClose(win);
 	si_allocatorFree(alloc);
