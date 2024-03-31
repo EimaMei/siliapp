@@ -1,7 +1,7 @@
 CC = gcc
 OUTPUT = build
 NAME = test
-OS = LINUX
+OS = MAC
 
 SRC-DIR = src
 SRC-FILES = $(notdir $(wildcard $(SRC-DIR)/*.c))
@@ -19,6 +19,10 @@ DEPS-OBJ = $(addprefix $(OUTPUT)/, $(DEPS-SRC:.c=.o))
 ifeq ($(OS),WINDOWS)
 	EXE = $(OUTPUT)/$(NAME).exe
 	LIBS = -luser32 -lkernel32 -lgdi32 -lopengl32 -luuid -lole32 -lcomctl32
+
+else ifeq ($(OS),MAC)
+	EXE = $(OUTPUT)/$(NAME)
+	LIBS = -framework Cocoa -framework Foundation -framework AppKit -framework OpenGL -framework CoreVideo
 
 else
 	EXE = $(OUTPUT)/$(NAME)
@@ -44,10 +48,10 @@ $(OUTPUT)/%.o: $(SRC-DIR)/%.c
 	$(CC) $(FLAGS) $(INCLUDE) -c $^ -o $(OUTPUT)/$(notdir $@)
 
 $(OUTPUT)/%.o: deps/%.h
-	$(CC) $(FLAGS) $(INCLUDE) $(LIBS) -c $(DEPS-DIR)/$(basename $(notdir $^)).c -o $(OUTPUT)/$(notdir $@)
+	$(CC) $(FLAGS) $(INCLUDE) -c $(DEPS-DIR)/$(basename $(notdir $^)).c -o $(OUTPUT)/$(notdir $@)
 
 $(OUTPUT)/%.o: %.h
-	$(CC) $(FLAGS) $(INCLUDE) $(LIBS) -c $(DEPS-DIR)/$(basename $(notdir $^)).c -o $(OUTPUT)/$(notdir $@)
+	$(CC) $(FLAGS) $(INCLUDE) -c $(DEPS-DIR)/$(basename $(notdir $^)).c -o $(OUTPUT)/$(notdir $@)
 
 
 # If 'build' doesn't exist, create it

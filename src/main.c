@@ -1,5 +1,5 @@
 #include <siliapp.h>
-#define DISABLE_SECOND_WINDOW 0
+#define DISABLE_SECOND_WINDOW 1
 
 #if DISABLE_SECOND_WINDOW != 1
 void secondWindowLoop(const siWindow* firstWindow);
@@ -13,7 +13,7 @@ int main(void) {
 
 	siWindow* win = siapp_windowMake(
 		alloc, "Example window | ĄČĘĖĮŠŲ | 「ケケア」",
-		SI_AREA(0, 0), SI_WINDOW_DEFAULT | SI_WINDOW_OPTIMAL_SIZE | SI_WINDOW_SCALING,
+		SI_AREA(0, 0), (SI_WINDOW_DEFAULT & ~SI_WINDOW_RENDERING_OPENGL) | SI_WINDOW_OPTIMAL_SIZE | SI_WINDOW_SCALING,
 		4, 0, SI_AREA(0, 0)
 	);
 	siapp_windowBackgroundSet(win, SI_RGB(0, 0, 0));
