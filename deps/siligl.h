@@ -5522,6 +5522,11 @@ SIGL_FUNC_DECLARE(BOOL, wglWaitForSbcOML, HDC hdc, INT64 target_sbc, INT64* ust,
         name = value.actualType; \
     }
 
+#if !SIGL_SYSTEM_IS_WINDOWS && !SIGL_SYSTEM_IS_UNIX
+	#undef SIGL_PROC_DEF
+	#define SIGL_PROC_DEF(name)
+#endif
+
 void sigl_loadOpenGLAll(void) {
 	sigl_loadOpenGL_1_2();
 	sigl_loadOpenGL_1_3();

@@ -513,13 +513,13 @@ SI_STATIC_ASSERT(false == 0);
 
 #if (defined(SI_LANGUAGE_CPP) && (SI_STANDARD_VERSION >= SI_STANDARD_CPP17)) || (!defined (SI_LANGUAGE_CPP) && SI_STANDARD_VERSION > SI_STANDARD_C17)
 	/* Specifies a fallthrough for the compiler. */
-	#define fallthrough [[fallthrough]]
+	#define siFallthrough [[fallthrough]]
 #elif defined(SI_GNUC_COMPLIANT)
 	/* Specifies a fallthrough for the compiler. */
-	#define fallthrough __attribute__((fallthrough))
+	#define siFallthrough __attribute__((fallthrough))
 #else
 	/* Specifies a fallthrough for the compiler. */
-	#define fallthrough do {} while (0)
+	#define siFallthrough do {} while (0)
 #endif
 
 
@@ -2215,8 +2215,6 @@ b32 si_dirPollEntry(siDirectory dir, siDirectoryEntry* entry);
  * contain both the entry's filename AND the directory 'dir.path'. Returns 'true'
  * if a new entry was found, 'false' if there are no more entries in the directory. */
 b32 si_dirPollEntryEx(siDirectory dir, siDirectoryEntry* entry, b32 fullPath);
-/* Closes the directory context. */
-void si_dirClose(siDirectory dir);
 
 #endif
 
@@ -4276,7 +4274,7 @@ u64 si_cstrToU64(cstring str) {
 }
 u64 si_cstrToU64Ex(cstring str, usize len, u32 base) {
 	SI_ASSERT_NOT_NULL(str);
-/*TODO(EimaMei): Update this to include other bases */
+
 	u64 res = 0;
 	while (len != 0) {
 		SI_STOPIF(*str == '\0', break);
@@ -5013,7 +5011,6 @@ u32 si_pathItemsCopy(cstring pathSrc, cstring pathDst) {
 		si_pathCopy(entry.path, outPath);
 		itemsCopied += 1;
 	}
-	si_dirClose(dir);
 
 	return itemsCopied;
 }
@@ -5739,6 +5736,7 @@ b32 si_dirPollEntryEx(siDirectory dir, siDirectoryEntry* entry, b32 fullPath) {
 	siAllocator* stack = si_allocatorMakeStack(SI_KILO(1));
 	WIN32_FIND_DATAW file;
 	if (FindNextFileW(dir.handle, &file) == 0) {
+		CloseHandle(dir.handle);
 		return false;
 	}
 
@@ -5763,7 +5761,10 @@ b32 si_dirPollEntryEx(siDirectory dir, siDirectoryEntry* entry, b32 fullPath) {
 	return true;
 #else
 	struct dirent* direntEntry = readdir((DIR*)dir.handle);
-	SI_STOPIF(direntEntry == nil, return false);
+	if (direntEntry == nil) {
+		closedir(dir.handle);
+		return false;
+	}
 
 	entry->len = strlen(direntEntry->d_name);
 
@@ -5782,13 +5783,6 @@ b32 si_dirPollEntryEx(siDirectory dir, siDirectoryEntry* entry, b32 fullPath) {
 	}
 
 	return true;
-#endif
-}
-void si_dirClose(siDirectory dir) {
-#if defined(SI_SYSTEM_WINDOWS)
-	CloseHandle(dir.handle);
-#else
-	closedir(dir.handle);
 #endif
 }
 

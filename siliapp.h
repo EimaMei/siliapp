@@ -91,8 +91,7 @@ extern "C" {
 	#undef VC_EXTRALEAN
 
 	#define SIAPP_PLATFORM_API_WIN32
-#elif defined(SI_SYSTEM_OS_X)
-	#error "siliapp.h is not implemented for MacOS"
+#elif defined(SI_SYSTEM_OSX)
 	#define SIAPP_PLATFORM_API_COCOA
 #endif
 
@@ -431,6 +430,9 @@ typedef struct {
 #elif defined(SIAPP_PLATFORM_API_X11)
 	Display* display;
 	Window hwnd;
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	void* hwnd;
+	void* delegate;
 #endif
 
 	union {
@@ -1017,6 +1019,10 @@ siMessageBoxResult siapp_messageBoxEx(const siWindow* win, cstring title, usize 
 #define WGL_EXT_swap_control
 #include <siligl.h>
 
+#if defined(SIAPP_PLATFORM_API_COCOA)
+#define SILICON_IMPLEMENTATION
+#include <silicon.h>
+#endif
 
 #if 1 /* Common. */
 
@@ -1566,6 +1572,17 @@ void siapp__x11CheckStartup(void) {
 	XSEL_DATA   = XInternAtom(SI_X11_DISPLAY, "XSEL_DATA", False);
 	WM_DELETE_WINDOW = XInternAtom(SI_X11_DISPLAY, "WM_DELETE_WINDOW", True);
 }
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	NSApplication* NSApp = nil;
+
+b32 windowShouldClose(NSWindow* self, SEL sel, id notification) {
+	siWindow* win = nil;
+	object_getInstanceVariable(self, "siWindow", (void*)&win);
+	SI_STOPIF(win == nil, si_printf("damn\n"); return true);
+
+	win->e.type.isClosed = true;
+	return true;
+}
 #endif
 
 
@@ -1735,6 +1752,12 @@ siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
 	SI_ASSERT_NOT_NULL(name);
 
 	siWindow* win = si_mallocItem(alloc, siWindow);
+#if defined(SIAPP_PLATFORM_API_COCOA)
+	if (NSApp == nil) {
+		NSApp = NSApplication_sharedApplication();
+		NSApplication_setActivationPolicy(NSApp, NSApplicationActivationPolicyRegular);
+	}
+#endif
 #if 0
 	SI_WINDOW_FULLSCREEN      = SI_BIT(1),
 	SI_WINDOW_BORDERLESS      = SI_BIT(2),
@@ -1835,6 +1858,32 @@ siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
 	SI_ROOT_WINDOW = win;
 	win->__x11BlankCursor = 0;
 	win->__x11DndHead = (rawptr)USIZE_MAX;
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	si_func_to_SEL_with_name(SI_DEFAULT, "windowShouldClose", (void*)windowShouldClose);
+
+	NSWindow* hwnd = NSWindow_init(
+		NSMakeRect(pos.x, pos.y, size.width, size.height),
+        NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable,
+		NSBackingStoreBuffered, false
+	);
+    NSWindow_setTitle(hwnd, name);
+    NSWindow_makeKeyAndOrderFront(hwnd, nil);
+	NSApplication_finishLaunching(NSApp);
+
+	Class delegateClass = objc_allocateClassPair(objc_getClass("NSObject"), "WindowDelegate", 0);
+	b32 res = class_addIvar(
+		delegateClass, "siWindow",
+		sizeof(siWindow*), rint(log2(sizeof(siWindow*))),
+		"L"
+	);
+	SI_ASSERT(res);
+
+	id delegate = NSInit(NSAlloc(delegateClass));
+	object_setInstanceVariable(delegate, "siWindow", win);
+	NSWindow_setDelegate(hwnd, delegate);
+
+	win->hwnd = hwnd;
+	win->delegate = delegate;
 #endif
 	win->arg = arg;
 	win->scaleFactor = SI_VEC2(1, 1);
@@ -1847,6 +1896,24 @@ siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
 
 
 	siapp_windowRendererMake(win, maxDrawCount, maxTexRes, maxTexCount);
+
+	maxTexRes.width += 1;
+	maxTexRes.height += 1;
+	maxTexCount = si_max(1, maxTexCount);
+
+	switch (arg & SI_WINDOW_RENDERING_BITS) {
+		case SI_WINDOW_RENDERING_OPENGL: {
+			siapp_windowOpenGLInit(win, maxDrawCount, maxTexCount, maxTexRes);
+			break;
+		}
+		case SI_WINDOW_RENDERING_CPU: {
+			SI_PANIC_MSG("CPU rendering isn't supported as of now");
+			break;
+		}
+		default: {
+			win->atlas = siapp_textureAtlasMake(win, maxTexRes, maxTexCount, SI_RESIZE_DEFAULT);
+		}
+	}
 	siapp_windowShow(win, (arg & SI_WINDOW_HIDDEN) == 0);
 
 	return win;
@@ -2262,6 +2329,11 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 		}
 	}
 	#undef SI_CHECK_WIN
+#else
+	NSEvent* event = NSApplication_nextEventMatchingMask(NSApp, NSEventMaskAny, NSDate_distantFuture(), NSDefaultRunLoopMode, await);
+
+	NSApplication_sendEvent(NSApp, event);
+	NSApplication_updateWindows(NSApp);
 #endif
 
 	f64 prevTime = out->curTime;
@@ -2344,6 +2416,8 @@ void siapp_windowClose(siWindow* win) {
 		XCloseDisplay(SI_X11_DISPLAY);
 		SI_X11_DISPLAY = nil;
 	}
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	NSWindow_close(win->hwnd);
 #endif
 }
 
@@ -2425,7 +2499,7 @@ void siapp_windowCursorSet(siWindow* win, siCursorType cursor) {
 	}
 	SetClassLongPtr(win->hwnd, GCLP_HCURSOR, (LONG_PTR)cursorName);
 	SetCursor(LoadCursorA(nil, cursorName));
-#else
+#elif defined(SIAPP_PLATFORM_API_X11)
 	SI_STOPIF(!isDif, return);
 
 	Cursor cursorVal;
@@ -2504,11 +2578,10 @@ siCursorType siapp_cursorMake(siByte* data, siArea res, u32 channels) {
 	DeleteObject(mask);
 
 	return -*(i32*)&handle;
-#else
+#elif defined(SIAPP_PLATFORM_API_X11)
 	XcursorImage* native = XcursorImageCreate(res.width, res.height);
 	native->xhot = 0;
 	native->yhot = 0;
-
 
 	u8* source = data;
 	XcursorPixel* target = native->pixels;
@@ -2706,10 +2779,13 @@ siArea siapp_screenGetCurrentSize(void) {
 	DEVMODEW mode = {0};
 	EnumDisplaySettingsW(nil, ENUM_CURRENT_SETTINGS, &mode);
 	return SI_AREA(mode.dmPelsWidth, mode.dmPelsHeight);
-#else
+#elif defined(SIAPP_PLATFORM_API_X11)
 	siapp__x11CheckStartup();
 	Screen* size = DefaultScreenOfDisplay(SI_X11_DISPLAY);
 	return SI_AREA(size->width, size->height);
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	NSRect frame = NSScreen_frame(NSScreen_mainScreen());
+	return SI_AREA(frame.size.width, frame.size.height);
 #endif
 }
 F_TRAITS(inline)
@@ -2731,7 +2807,7 @@ F_TRAITS(inline)
 void siapp_mouseShow(b32 show) {
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	ShowCursor(show);
-#else
+#elif defined(SIAPP_PLATFORM_API_X11)
 	siWindow* win = SI_ROOT_WINDOW;
 
 	if (show) {
@@ -2852,7 +2928,7 @@ usize siapp_clipboardTextLen(void) {
 	CloseClipboard();
 
 	return len;
-#else
+#elif defined(SIAPP_PLATFORM_API_X11)
 	siapp__x11CheckStartup();
 
 	Atom type;
@@ -2883,6 +2959,7 @@ usize siapp_clipboardTextLen(void) {
 
 siDropHandle siapp_dropEventHandle(siDropEvent event) {
 	SI_ASSERT_MSG(event.state == SI_DRAG_DROP, "This function should only get called after a confirmed successful drop.");
+	siDropHandle res;
 
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	FORMATETC fmte = {CF_HDROP, nil, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
@@ -2895,7 +2972,6 @@ siDropHandle siapp_dropEventHandle(siDropEvent event) {
 
 	HDROP hdrop = (HDROP)stgm.hGlobal;
 
-	siDropHandle res;
 	res.curIndex = 0;
 	res.len = DragQueryFileW(hdrop, 0xFFFFFFFF, NULL, 0);
 	res.stgm = stgm;
@@ -2942,7 +3018,7 @@ b32 siapp_dropEventPollEntry(siDropHandle* handle, siDropEntry* entry) {
 	handle->curIndex += 1;
 
 	return true;
-#else
+#elif defined(SIAPP_PLATFORM_API_X11)
 	if (handle->__x11Data[handle->curIndex] == '\0') {
 		XFree(handle->__x11Data);
 		return false;
@@ -3401,12 +3477,14 @@ siTextureAtlas siapp_textureAtlasMake(const siWindow* win, siArea area, u32 maxT
 			glActiveTexture(GL_TEXTURE0 + index);
 			glBindTexture(GL_TEXTURE_2D, atlas.texID.opengl);
 
+#if !defined(SIAPP_PLATFORM_API_COCOA)
 			glTexStorage2D(
 				GL_TEXTURE_2D,
 				1,
 				GL_RGBA8,
 				atlas.totalWidth, atlas.texHeight
 			);
+#endif
 
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, enumName);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, enumName);
@@ -4200,8 +4278,7 @@ void siapp_drawRectF(siWindow* win, siVec4 rect, siColor color) {
 					cpu->buffer[index + 0] += color.b;
 					cpu->buffer[index + 1] += color.g;
 					cpu->buffer[index + 2] += color.r;
-
-
+					
 					index += 4;
 				}
 			}
@@ -4810,6 +4887,7 @@ siOpenGLInfo siapp_OpenGLGetInfo(void) {
 }
 
 const char* GetStringForEnum(GLenum value) {
+#if !defined(SIAPP_PLATFORM_API_COCOA)
 	switch (value) {
 		// Source enums
 		case GL_DEBUG_SOURCE_API:
@@ -4858,6 +4936,7 @@ const char* GetStringForEnum(GLenum value) {
 		default:
 			return "UNKNOWN_ENUM";
 	}
+#endif
 }
 
 void DebugCallback(GLenum source, GLenum type, GLuint id, GLenum severity,
@@ -4965,7 +5044,9 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 
 #endif
 	if (glInfo.isLoaded == false) {
+#if !defined(SIAPP_PLATFORM_API_COCOA)
 		sigl_loadOpenGLAll();
+#endif
 		glInfo.isLoaded = true;
 
 		glGetIntegerv(GL_MAJOR_VERSION, &glInfo.versionSelected.major);
@@ -5112,7 +5193,19 @@ void siapp_windowOpenGLRender(siWindow* win) {
 	glUniformMatrix4fv(gl->uniformMvp, gl->drawCounter, GL_FALSE, gl->matrices->m);
 
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl->VBOs[SI_VBO_ELM]);
-	glMultiDrawElementsIndirect(GL_TRIANGLE_FAN, GL_UNSIGNED_SHORT, gl->CMDs, gl->drawCounter, 0);
+	for_range (i, 0, gl->drawCounter) {
+        const siOpenGLDrawCMD* cmd = &gl->CMDs[i];
+
+        glDrawElementsInstancedBaseVertexBaseInstance(
+			GL_TRIANGLE_FAN,
+            cmd->count,
+            GL_UNSIGNED_SHORT,
+            (siByte*)(cmd->firstIndex * sizeof(u16)),
+            cmd->instanceCount,
+            cmd->baseVertex,
+            cmd->baseInstance
+		);
+	}
 	glFinish();
 
 	gl->vertexCounter = 0;
