@@ -2995,7 +2995,6 @@ end:
 		index += 1;
 	}
 
-	siDropHandle res;
 	res.curIndex = 0;
 	res.len = len;
 	res.__x11Data = event.data;
@@ -3477,14 +3476,7 @@ siTextureAtlas siapp_textureAtlasMake(const siWindow* win, siArea area, u32 maxT
 			glActiveTexture(GL_TEXTURE0 + index);
 			glBindTexture(GL_TEXTURE_2D, atlas.texID.opengl);
 
-#if !defined(SIAPP_PLATFORM_API_COCOA)
-			glTexStorage2D(
-				GL_TEXTURE_2D,
-				1,
-				GL_RGBA8,
-				atlas.totalWidth, atlas.texHeight
-			);
-#endif
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, atlas.totalWidth, atlas.texHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, nil);
 
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, enumName);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, enumName);
@@ -4278,7 +4270,7 @@ void siapp_drawRectF(siWindow* win, siVec4 rect, siColor color) {
 					cpu->buffer[index + 0] += color.b;
 					cpu->buffer[index + 1] += color.g;
 					cpu->buffer[index + 2] += color.r;
-					
+
 					index += 4;
 				}
 			}
@@ -5193,18 +5185,19 @@ void siapp_windowOpenGLRender(siWindow* win) {
 	glUniformMatrix4fv(gl->uniformMvp, gl->drawCounter, GL_FALSE, gl->matrices->m);
 
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl->VBOs[SI_VBO_ELM]);
+
+	u32 count = 0;
 	for_range (i, 0, gl->drawCounter) {
         const siOpenGLDrawCMD* cmd = &gl->CMDs[i];
 
-        glDrawElementsInstancedBaseVertexBaseInstance(
+		glDrawElementsInstanced(
 			GL_TRIANGLE_FAN,
-            cmd->count,
-            GL_UNSIGNED_SHORT,
-            (siByte*)(cmd->firstIndex * sizeof(u16)),
-            cmd->instanceCount,
-            cmd->baseVertex,
-            cmd->baseInstance
+			cmd->count,
+			GL_UNSIGNED_SHORT,
+            (siByte*)((count + cmd->firstIndex) * sizeof(u16)),
+            cmd->instanceCount
 		);
+		count += cmd->count;
 	}
 	glFinish();
 
