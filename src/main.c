@@ -14,10 +14,9 @@ int main(void) {
 	siWindow* win = siapp_windowMake(
 		alloc, "Example window | ĄČĘĖĮŠŲ | 「ケケア」",
 		SI_AREA(0, 0), SI_WINDOW_DEFAULT | SI_WINDOW_OPTIMAL_SIZE | SI_WINDOW_SCALING,
-		4, 0, SI_AREA(0, 0)
+		SI_RENDERING_OPENGL, 4, 0, SI_AREA(0, 0)
 	);
-	si_printf("yes\n");
-	siapp_windowBackgroundSet(win, SI_RGB(0, 0, 0));
+	//siapp_windowBackgroundSet(win, SI_RGB(0, 0, 0));
 
 	siDropEvent drops[2];
 
@@ -46,8 +45,8 @@ int main(void) {
 
 	siCursorType curCursor = SI_CURSOR_DEFAULT,
 				 newCursor = customCursor;
-	u32 curRender = SI_WINDOW_RENDERING_OPENGL,
-		newRender = SI_WINDOW_RENDERING_CPU;
+	u32 curRender = SI_RENDERING_OPENGL,
+		newRender = SI_RENDERING_CPU;
 
 #if DISABLE_SECOND_WINDOW != 1
 	siThread t = si_threadCreate(secondWindowLoop, win);
@@ -97,7 +96,7 @@ int main(void) {
 				case SK_C: {
 					siapp_windowRendererChange(win, newRender);
 					si_swap(curRender, newRender);
-					break;
+					continue;
 				}
 			}
 		}
@@ -128,13 +127,11 @@ int main(void) {
 				}
 			}
             siapp_dropEventEnd(drop);
-#if 1
 			siapp_drawRect(
 				win,
 				SI_RECT(i * widthHalf, 0, widthHalf, win->originalSize.height),
 				sideClrs[i]
 			);
-#endif
 		}
 
 		siColor gradient[3] = {
@@ -154,7 +151,7 @@ int main(void) {
 		siapp_windowRender(win);
 		siapp_windowSwapBuffers(win);
 	}
-    //siapp_cursorFree(customCursor);
+    siapp_cursorFree(customCursor);
 
 	for_range (i, 0, countof(drops)) {
 		siapp_windowDragAreaEnd(win, &drops[i]);

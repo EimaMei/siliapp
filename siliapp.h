@@ -128,17 +128,26 @@ typedef SI_ENUM(b32, siWindowArg) {
 	SI_WINDOW_MAXIMIZED               = SI_BIT(5),
 	SI_WINDOW_HIDDEN                  = SI_BIT(6),
 
-	SI_WINDOW_RENDERING_CPU           = SI_BIT(7),
-	SI_WINDOW_RENDERING_OPENGL        = SI_BIT(8),
-	SI_WINDOW_RENDERING_OPENGL_LEGACY = SI_BIT(9),
+	SI_WINDOW_SCALING                 = SI_BIT(7),
+	SI_WINDOW_OPTIMAL_SIZE            = SI_BIT(8),
+	SI_WINDOW_KEEP_ASPECT_RATIO       = SI_BIT(9),
 
-	SI_WINDOW_SCALING                 = SI_BIT(10),
-	SI_WINDOW_OPTIMAL_SIZE            = SI_BIT(11),
-	SI_WINDOW_KEEP_ASPECT_RATIO       = SI_BIT(12),
-
-	SI_WINDOW_DEFAULT                 = SI_WINDOW_CENTER | SI_WINDOW_RESIZABLE | SI_WINDOW_RENDERING_OPENGL,
+	SI_WINDOW_DEFAULT                 = SI_WINDOW_CENTER | SI_WINDOW_RESIZABLE,
 	SI_WINDOW_DESKTOP                 = SI_WINDOW_FULLSCREEN | SI_WINDOW_BORDERLESS,
-	SI_WINDOW_RENDERING_BITS          = SI_WINDOW_RENDERING_CPU | SI_WINDOW_RENDERING_OPENGL
+};
+
+typedef SI_ENUM(u32, siRenderingType) {
+	SI_RENDERING_OPENGL = SI_BIT(0),
+		SI_RENDERINGVER_OPENGL_LEGACY = SI_BIT(1),
+		SI_RENDERINGVER_OPENGL_3_1 = SI_BIT(2),
+		SI_RENDERINGVER_OPENGL_4_4 = SI_BIT(3),
+
+	SI_RENDERING_CPU = SI_BIT(4),
+	SI_RENDERING_NONE = SI_BIT(5),
+
+	SI_RENDERING_DEFAULT = SI_RENDERING_OPENGL,
+	SI_RENDERING_BITS = SI_RENDERING_OPENGL | SI_RENDERING_CPU,
+	SI_RENDERING_OPENGL_BITS = SI_RENDERINGVER_OPENGL_LEGACY | SI_RENDERINGVER_OPENGL_3_1 | SI_RENDERINGVER_OPENGL_4_4,
 };
 
 typedef SI_ENUM(u8, siKeyType) {
@@ -351,8 +360,10 @@ typedef struct {
 
 typedef struct {
 	b32 isLoaded;
+
 	siVersion versionMax;
 	i32 texSizeMax;
+	i32 texLenMax;
 
 	siVersion versionSelected;
 	u32 stencilSize;
@@ -452,6 +463,7 @@ typedef struct {
 
 	siWindowEvent e;
 	siWindowArg arg;
+	siRenderingType renderType;
 
 	siVec2 scaleFactor;
 	siArea originalSize;
@@ -680,11 +692,13 @@ typedef struct { siVec2 p1, p2, p3; } siTriangleF;
 /* Creates a windows based on the specified name, size and arguments, returns a
  * 'siWindow' object. */
 siWindow* siapp_windowMake(siAllocator* alloc, cstring name, siArea size,
-		siWindowArg arg, u32 maxDrawCount, u32 maxTexCount, siArea maxTexRes);
+		siWindowArg arg, siRenderingType render, u32 maxDrawCount, u32 maxTexCount,
+		siArea maxTexRes);
 /* Creates a windows based on the specified name, position, size and arguments,
  * returns a 'siWindow' object. */
 siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
-		siArea size, siWindowArg arg, u32 maxDrawCount, u32 maxTexCount, siArea maxTexRes);
+		siArea size, siRenderingType render, siWindowArg arg, u32 maxDrawCount,
+		u32 maxTexCount, siArea maxTexRes);
 
 /* Checks the changes for the specified window and updates the contents of 'out'. */
 const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await);
@@ -981,7 +995,7 @@ void siapp_windowOpenGLDestroy(siWindow* win);
 
 /* Sets the max OpenGL version used for the app (by default it picks the most up
  * to date version on the system). */
-void siapp_OpenGLVersionSet(siVersion ver);
+void siapp_OpenGLVersionSet(i32 major, i32 minor);
 /* Sets the buffer bit size (8 by default). */
 void siapp_OpenGLStencilSet(u32 stencil);
 /* Sets the number of sampling buffers (4 by default). */
@@ -1066,8 +1080,9 @@ intern u32 SI_WINDOWS_NUM = 0;
 		GLint len; \
 		glGetProgramiv(programID, GL_INFO_LOG_LENGTH, &len); \
 		\
-		char* msg = (char*)malloc(len); \
+		char* msg = (char*)malloc(len + 1); \
 		glGetProgramInfoLog(programID, len, nil, msg); \
+		msg[len + 1] = '\0'; \
 		siapp_messageBox(title, msg, SI_MESSAGE_BOX_OK, SI_MESSAGE_BOX_ICON_ERROR); \
 		\
 		free(msg); \
@@ -1103,47 +1118,47 @@ b32 siapp__collideRectPoint(siRect r, siPoint p) {
 
 F_TRAITS(intern)
 void siapp__resizeWindow(siWindow* win, i32 width, i32 height) {
-   win->e.type.windowResize = true;
-   win->e.windowSize = SI_AREA(width, height);
+	win->e.type.windowResize = true;
+	win->e.windowSize = SI_AREA(width, height);
 
-   switch (win->arg & SI_WINDOW_RENDERING_BITS) {
-	   case SI_WINDOW_RENDERING_OPENGL: {
-		   siWinRenderingCtxOpenGL* gl = &win->render.opengl;
+	switch (win->renderType & SI_RENDERING_BITS) {
+		case SI_RENDERING_OPENGL: {
+			siWinRenderingCtxOpenGL* gl = &win->render.opengl;
 
-		   if (win->arg & SI_WINDOW_SCALING) {
-			   glViewport(0, 0, width, height);
-		   }
-		   if (win->arg & SI_WINDOW_KEEP_ASPECT_RATIO) {
-			   i32 newY = 0;
+			if (win->arg & SI_WINDOW_SCALING) {
+		  	    glViewport(0, 0, width, height);
+		  	}
+		  	if (win->arg & SI_WINDOW_KEEP_ASPECT_RATIO) {
+				i32 newY = 0;
 
-			   if (height <= win->originalSize.height) {
-				   newY = height - win->originalSize.height;
-				   height = win->originalSize.height;
-			   }
+		  	    if (height <= win->originalSize.height) {
+		  	 	   newY = height - win->originalSize.height;
+		  	 	   height = win->originalSize.height;
+		  	    }
 
-			   f32 aspect = (f32)height / gl->size.height;
-			   i32 newH = gl->size.height * aspect;
-			   i32 newW = gl->size.width * aspect;
+		  	    f32 aspect = (f32)height / gl->size.height;
+		  	    i32 newH = gl->size.height * aspect;
+		  	    i32 newW = gl->size.width * aspect;
 
-			   glViewport(0, newY, newW, newH);
-		   }
-		   else {
-			   glViewport(0, height - gl->size.height, gl->size.width, gl->size.height);
-		   }
+		  	    glViewport(0, newY, newW, newH);
+		  	}
+		  	else {
+		  	    glViewport(0, height - gl->size.height, gl->size.width, gl->size.height);
+		  	}
 
-		   GLint view[4];
-		   glGetIntegerv(GL_VIEWPORT, view);
-		   f32 viewW = view[2];
-		   f32 viewH = view[3];
+		  	GLint view[4];
+		  	glGetIntegerv(GL_VIEWPORT, view);
+		  	f32 viewW = view[2];
+		  	f32 viewH = view[3];
 
-		   win->scaleFactor = SI_VEC2(viewW / gl->size.width, viewH / gl->size.height);
-		   win->e.windowSizeScaled = SI_AREA(
-				   si_round(width / win->scaleFactor.x),
-				   si_round(height / win->scaleFactor.y)
-				   );
-		   break;
-	   }
-   }
+		  	win->scaleFactor = SI_VEC2(viewW / gl->size.width, viewH / gl->size.height);
+		  	win->e.windowSizeScaled = SI_AREA(
+		  	  	si_round(width / win->scaleFactor.x),
+		  	  	si_round(height / win->scaleFactor.y)
+		  	);
+		  	break;
+		}
+	}
 }
 #endif
 
@@ -1623,18 +1638,22 @@ typedef SI_ENUM(i32, siShaderIndex) {
 #define i32ToNDCX(num, windowCord) (((+2.0f * (num)) / (windowCord)) - 1.0f)
 #define i32ToNDCY(num, windowCord) (((-2.0f * (num)) / (windowCord)) + 1.0f)
 
-/* glBufferStorage(GL_ARRAY_BUFFER, size, nil, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT); */
 #define GL_BUFFER_MAKE(ID, var, size) \
 	do { \
-		glBindBuffer(GL_ARRAY_BUFFER, gl->VBOs[ID]); \
-		glBufferData(GL_ARRAY_BUFFER, size, nil, GL_STATIC_DRAW); \
-		var = glMapBufferRange(GL_ARRAY_BUFFER, 0, size, GL_MAP_WRITE_BIT); \
+		if ((win->renderType & SI_RENDERING_OPENGL_BITS) == SI_RENDERINGVER_OPENGL_3_1) { \
+			var = (typeof(var))malloc(size); \
+		} \
+		else { \
+			glBindBuffer(GL_ARRAY_BUFFER, gl->VBOs[ID]); \
+			glBufferStorage(GL_ARRAY_BUFFER, size, nil, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT); \
+			var = glMapBufferRange(GL_ARRAY_BUFFER, 0, size, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT); \
+		} \
 	} while(0)
 
-static siOpenGLInfo glInfo = {false, {0, 0}, 0, {0, 0}, 8, 4, false, 0};
+static siOpenGLInfo glInfo = {false, {0, 0}, 0, 0, {0, 0}, 8, 4, false, 0};
 
 static const char defaultVShaderCode[] = MULTILINE_STR(
-	\x23version 330\n
+	\x23version 130\n
 
 	in vec3 pos;
 	in vec2 tex;
@@ -1644,7 +1663,7 @@ static const char defaultVShaderCode[] = MULTILINE_STR(
 	out vec2 fragTex;
 	out vec4 fragClr;
 	flat out uint fragTexID;
-	uniform mat4 mvp[%u]; // TODO(EimaMei): FIX THIS!!!!!
+	uniform mat4 mvp[%u];
 
 	void main() {
 		fragTex = tex;
@@ -1653,19 +1672,34 @@ static const char defaultVShaderCode[] = MULTILINE_STR(
 		gl_Position = vec4(pos, 1.0) * mvp[info.y];
 	}
 );
-static const char defaultFShaderCode[] = MULTILINE_STR(
-	\x23version 330\n
+static const char FSHADER_4_0[] = MULTILINE_STR(
+	\x23version 400\n
 
 	in vec2 fragTex;
 	in vec4 fragClr;
 	flat in uint fragTexID;
 	out vec4 finalColor;
 
-	uniform sampler2D textures[16]; // TODO(EimaMei): Add for more support.
+
+	uniform sampler2D textures[%u];
 
 	void main() {
 		finalColor = texture(textures[fragTexID], fragTex) * fragClr;
 	}
+);
+static const char FSHADER_3_1[] = MULTILINE_STR(
+	\x23version 150\n
+
+	in vec2 fragTex;
+	in vec4 fragClr;
+	flat in uint fragTexID;
+	out vec4 finalColor;
+
+
+	uniform sampler2D textures[%u];
+
+	void main() {
+		switch (fragTexID) {
 );
 
 i32 si_OpenGLShaderMake(i32 shaderType, cstring source) {
@@ -1756,11 +1790,14 @@ siMatrix rglMatrixIdentity(void) {
 
 F_TRAITS(inline)
 siWindow* siapp_windowMake(siAllocator* alloc, cstring name, siArea size,
-		siWindowArg arg, u32 maxDrawCount, u32 maxTexCount, siArea maxTexRes) {
-	return siapp_windowMakeEx(alloc, name, SI_POINT(0, 0), size, arg, maxDrawCount, maxTexCount, maxTexRes);
+		siWindowArg arg, siRenderingType render, u32 maxDrawCount, u32 maxTexCount,
+		siArea maxTexRes) {
+	return siapp_windowMakeEx(alloc, name, SI_POINT(0, 0), size, arg, render,
+			maxDrawCount, maxTexCount, maxTexRes);
 }
 siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
-		siArea size, siWindowArg arg, u32 maxDrawCount, u32 maxTexCount, siArea maxTexRes) {
+		siArea size, siWindowArg arg, siRenderingType render, u32 maxDrawCount,
+		u32 maxTexCount, siArea maxTexRes) {
 	SI_ASSERT_NOT_NULL(alloc);
 	SI_ASSERT_NOT_NULL(name);
 #if defined(SIAPP_PLATFORM_API_COCOA)
@@ -1898,6 +1935,7 @@ siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
 	win->textColor.vec4 = SI_VEC4(1, 1, 1, 1);
 	win->imageColor = SI_VEC4(1, 1, 1, 1);
 	win->maxDrawCount = maxDrawCount;
+	win->renderType = render;
 
 
 	siapp_windowRendererMake(win, maxDrawCount, maxTexRes, maxTexCount);
@@ -2333,22 +2371,22 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 void siapp_windowRender(siWindow* win) {
 	SI_ASSERT_NOT_NULL(win);
 
-	switch (win->arg & SI_WINDOW_RENDERING_BITS) {
-		case SI_WINDOW_RENDERING_OPENGL: siapp_windowOpenGLRender(win); break;
-		case SI_WINDOW_RENDERING_CPU: siapp_windowCPURender(win); break;
+	switch (win->renderType & SI_RENDERING_BITS) {
+		case SI_RENDERING_OPENGL: siapp_windowOpenGLRender(win); break;
+		case SI_RENDERING_CPU: siapp_windowCPURender(win); break;
 	}
 }
 void siapp_windowClear(const siWindow* win) {
 	SI_ASSERT_NOT_NULL(win);
 
-	switch (win->arg & SI_WINDOW_RENDERING_BITS) {
-		case SI_WINDOW_RENDERING_OPENGL: {
+	switch (win->renderType & SI_RENDERING_BITS) {
+		case SI_RENDERING_OPENGL: {
 			const siWinRenderingCtxOpenGL* gl = &win->render.opengl;
 			glClearColor(gl->bgColor.x, gl->bgColor.y, gl->bgColor.z, gl->bgColor.w);
 			glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 			break;
 		}
-		case SI_WINDOW_RENDERING_CPU: {
+		case SI_RENDERING_CPU: {
 			const siWinRenderingCtxCPU* cpu = &win->render.cpu;
 
 			u32 pixelCount = cpu->size.width * cpu->size.height;
@@ -2366,8 +2404,8 @@ F_TRAITS(inline)
 void siapp_windowSwapBuffers(const siWindow* win) {
 	SI_ASSERT_NOT_NULL(win);
 
-	switch (win->arg & SI_WINDOW_RENDERING_BITS) {
-		case SI_WINDOW_RENDERING_OPENGL: {
+	switch (win->renderType & SI_RENDERING_BITS) {
+		case SI_RENDERING_OPENGL: {
 		#if defined(SIAPP_PLATFORM_API_WIN32)
 			SwapBuffers(win->hdc);
 		#elif defined(SIAPP_PLATFORM_API_X11)
@@ -2642,14 +2680,14 @@ void siapp_windowGradientSet(siWindow* win, const siColor gradient[], usize len)
 	SI_ASSERT_NOT_NULL(win);
 	SI_ASSERT_NOT_NULL(gradient);
 
-	switch (win->arg & SI_WINDOW_RENDERING_BITS) {
-		case SI_WINDOW_RENDERING_OPENGL: {
+	switch (win->renderType & SI_RENDERING_BITS) {
+		case SI_RENDERING_OPENGL: {
 			siWinRenderingCtxOpenGL* gl = &win->render.opengl;
 			gl->gradient = gradient;
 			gl->gradientLen = len;
 			break;
 		}
-		case SI_WINDOW_RENDERING_CPU: {
+		case SI_RENDERING_CPU: {
 			siWinRenderingCtxCPU* cpu = &win->render.cpu;
 			cpu->gradient = gradient;
 			cpu->gradientLen = len;
@@ -3450,7 +3488,7 @@ siTextureAtlas siapp_textureAtlasMake(const siWindow* win, siArea area, u32 maxT
 	SI_ASSERT_NOT_NULL(win);
 
 	siTextureAtlas atlas;
-	atlas.renderID = win->arg & SI_WINDOW_RENDERING_BITS;
+	atlas.renderID = win->renderType & SI_RENDERING_BITS;
 	atlas.resizeMethod = enumName;
 	atlas.texWidth = area.width;
 	atlas.texHeight = area.height;
@@ -3459,7 +3497,7 @@ siTextureAtlas siapp_textureAtlasMake(const siWindow* win, siArea area, u32 maxT
 	atlas.totalWidth = atlas.texWidth * maxTexCount;
 
 	switch (atlas.renderID) {
-		case SI_WINDOW_RENDERING_OPENGL: {
+		case SI_RENDERING_OPENGL: {
 			glGenTextures(1, &atlas.texID.opengl);
 			u32 index = atlas.texID.opengl - 1;
 
@@ -3476,7 +3514,7 @@ siTextureAtlas siapp_textureAtlasMake(const siWindow* win, siArea area, u32 maxT
 			glUniform1i(win->render.opengl.uniformTexture + index, index);
 			break;
 		}
-		case SI_WINDOW_RENDERING_CPU: {
+		case SI_RENDERING_CPU: {
 		#if defined(SIAPP_PLATFORM_API_X11)
 			atlas.texID.cpu = (siColor*)calloc(sizeof(siColor), atlas.totalWidth * area.height);
 		#endif
@@ -3488,11 +3526,11 @@ siTextureAtlas siapp_textureAtlasMake(const siWindow* win, siArea area, u32 maxT
 }
 void siapp_textureAtlasFree(siTextureAtlas atlas) {
 	switch (atlas.renderID) {
-		case SI_WINDOW_RENDERING_OPENGL: {
+		case SI_RENDERING_OPENGL: {
 			glDeleteTextures(1, &atlas.texID.opengl);
 			break;
 		}
-		case SI_WINDOW_RENDERING_CPU: {
+		case SI_RENDERING_CPU: {
 			free(atlas.texID.cpu);
 			break;
 		}
@@ -3503,7 +3541,7 @@ void siapp_textureSwizzleMask(siTextureAtlas atlas, siSwizzleEnum param,
 	SI_ASSERT_NOT_NULL(mask);
 
 	switch (atlas.renderID) {
-		case SI_WINDOW_RENDERING_OPENGL: {
+		case SI_RENDERING_OPENGL: {
 			glActiveTexture(GL_TEXTURE0 + atlas.texID.opengl - 1);
 			glBindTexture(GL_TEXTURE_2D, atlas.texID.opengl);
 			glTexParameteriv(GL_TEXTURE_2D, param, mask);
@@ -3515,7 +3553,7 @@ void siapp_textureResizeMethodChange(siTextureAtlas* atlas, siTextureResizeEnum
 	SI_ASSERT_NOT_NULL(atlas);
 	atlas->resizeMethod = resizeMethod;
 
-	if (atlas->renderID == SI_WINDOW_RENDERING_OPENGL) {
+	if (atlas->renderID == SI_RENDERING_OPENGL) {
 		glActiveTexture(GL_TEXTURE0 + atlas->texID.opengl - 1);
 		glBindTexture(GL_TEXTURE_2D, atlas->texID.opengl);
 	}
@@ -3560,7 +3598,7 @@ siImage siapp_imageLoadEx(siTextureAtlas* atlas, const siByte* buffer, u32 width
 	res.id = atlas->curCount;
 
 	switch (atlas->renderID) {
-		case SI_WINDOW_RENDERING_OPENGL: {
+		case SI_RENDERING_OPENGL: {
 			u32 c = 0;
 			switch (channels) {
 				case 1: c = GL_ALPHA; break;
@@ -3589,7 +3627,7 @@ siImage siapp_imageLoadEx(siTextureAtlas* atlas, const siByte* buffer, u32 width
 
 			break;
 		}
-		case SI_WINDOW_RENDERING_CPU: {
+		case SI_RENDERING_CPU: {
 			siColor* atlasBuf = atlas->texID.cpu;
 			res.x1 = atlas->curWidth;
 			res.y1 = 0;
@@ -3708,7 +3746,7 @@ void siapp_spriteSheetSpriteSetEx(siSpriteSheet sheet, usize index, const siByte
 	usize xOffset = img.id * atlas->texWidth;
 
 	switch (atlas->renderID) {
-		case SI_WINDOW_RENDERING_OPENGL: {
+		case SI_RENDERING_OPENGL: {
 			glActiveTexture(GL_TEXTURE0 + atlas->texID.opengl - 1);
 			glBindTexture(GL_TEXTURE_2D, atlas->texID.opengl);
 			glTexSubImage2D(
@@ -4113,12 +4151,12 @@ F_TRAITS(inline)
 siColor siapp_windowBackgroundGet(const siWindow* win) {
 	SI_ASSERT_NOT_NULL(win);
 
-	switch (win->arg & SI_WINDOW_RENDERING_BITS) {
-		case SI_WINDOW_RENDERING_OPENGL: {
+	switch (win->renderType & SI_RENDERING_BITS) {
+		case SI_RENDERING_OPENGL: {
 			const siVec4* bg = &win->render.opengl.bgColor;
 			return SI_RGBA(bg->x * 255, bg->y * 255, bg->z * 255, bg->w * 255);
 		}
-		case SI_WINDOW_RENDERING_CPU: {
+		case SI_RENDERING_CPU: {
 			const siColor* bg = &win->render.cpu.bgColor;
 			return SI_RGB(bg->b, bg->g, bg->r);
 		}
@@ -4130,27 +4168,23 @@ F_TRAITS(inline)
 void siapp_windowBackgroundSet(siWindow* win, siColor color) {
 	SI_ASSERT_NOT_NULL(win);
 
-	switch (win->arg & SI_WINDOW_RENDERING_BITS) {
-		case SI_WINDOW_RENDERING_OPENGL: {
+	switch (win->renderType & SI_RENDERING_BITS) {
+		case SI_RENDERING_OPENGL: {
 			siVec4* bg = &win->render.opengl.bgColor;
 			bg->x = color.r / 255.0f;
 			bg->y = color.g / 255.0f;
 			bg->z = color.b / 255.0f;
 			bg->w = color.a / 255.0f;
-			siapp_windowClear(win);
 			break;
 		}
-		case SI_WINDOW_RENDERING_CPU: {
+		case SI_RENDERING_CPU: {
 		#if defined(SIAPP_PLATFORM_API_X11)
-			u32 clr = ((u32)color.r << 16) | ((u32)color.g << 8) | color.b;
 			win->render.cpu.bgColor = SI_RGB(color.b, color.g, color.r);
-
-			XSetWindowBackground(win->display, win->hwnd, clr);
-			XFlush(win->display);
 		#endif
 			break;
 		}
 	}
+	siapp_windowClear(win);
 }
 
 F_TRAITS(inline)
@@ -4219,8 +4253,8 @@ void siapp_drawRect(siWindow* win, siRect rect, siColor color) {
 void siapp_drawRectF(siWindow* win, siVec4 rect, siColor color) {
 	SI_ASSERT_NOT_NULL(win);
 
-	switch (win->arg & SI_WINDOW_RENDERING_BITS) {
-		case SI_WINDOW_RENDERING_OPENGL: {
+	switch (win->renderType & SI_RENDERING_BITS) {
+		case SI_RENDERING_OPENGL: {
 			siWinRenderingCtxOpenGL* gl = &win->render.opengl;
 			SI_STOPIF(gl->vertexCounter + 4 > gl->maxVertexCount, siapp_windowRender(win));
 
@@ -4241,7 +4275,7 @@ void siapp_drawRectF(siWindow* win, siVec4 rect, siColor color) {
 			break;
 		}
 
-		case SI_WINDOW_RENDERING_CPU: {
+		case SI_RENDERING_CPU: {
 			siWinRenderingCtxCPU* cpu = &win->render.cpu;
 			siRect r = SI_RECT(rect.x, rect.y, rect.z, rect.w);
 
@@ -4345,8 +4379,8 @@ void siapp__cpuDrawImageNearest(siWinRenderingCtxCPU* cpu, siRect r, siImage* im
 void siapp_drawImageF(siWindow* win, siVec4 rect, siImage img) {
 	SI_ASSERT_NOT_NULL(win);
 
-	switch (win->arg & SI_WINDOW_RENDERING_BITS) {
-		case SI_WINDOW_RENDERING_OPENGL: {
+	switch (win->renderType & SI_RENDERING_BITS) {
+		case SI_RENDERING_OPENGL: {
 			siWinRenderingCtxOpenGL* gl = &win->render.opengl;
 			SI_STOPIF(gl->vertexCounter + 4 > gl->maxVertexCount, siapp_windowRender(win));
 
@@ -4369,7 +4403,7 @@ void siapp_drawImageF(siWindow* win, siVec4 rect, siImage img) {
 			siapp__addVertexesToCMD(gl, 6, 4);
 			break;
 		}
-		case SI_WINDOW_RENDERING_CPU: {
+		case SI_RENDERING_CPU: {
 			siWinRenderingCtxCPU* cpu = &win->render.cpu;
 
 			siArea pos = SI_AREA(rect.z, rect.w);
@@ -4405,8 +4439,8 @@ void siapp_drawTriangle(siWindow* win, siTriangle triangle, siColor color) {
 void siapp_drawTriangleF(siWindow* win, siTriangleF triangle, siColor color) {
 	SI_ASSERT_NOT_NULL(win);
 
-	switch (win->arg & SI_WINDOW_RENDERING_BITS) {
-		case SI_WINDOW_RENDERING_OPENGL: {
+	switch (win->renderType & SI_RENDERING_BITS) {
+		case SI_RENDERING_OPENGL: {
 			siWinRenderingCtxOpenGL* gl = &win->render.opengl;
 			SI_STOPIF(gl->vertexCounter + 3 > gl->maxVertexCount, siapp_windowRender(win));
 
@@ -4425,7 +4459,7 @@ void siapp_drawTriangleF(siWindow* win, siTriangleF triangle, siColor color) {
 			siapp__addVertexesToCMD(gl, 3, 3);
 			break;
 		}
-		case SI_WINDOW_RENDERING_CPU: {
+		case SI_RENDERING_CPU: {
 			break;
 		}
 	}
@@ -4818,17 +4852,16 @@ void siapp_texCoords2f(siWindow* win, f32 x, f32 y) {
 void siapp_windowRendererMake(siWindow* win, u32 maxDrawCount,
 		siArea maxTexRes, u32 maxTexCount) {
 	SI_ASSERT_NOT_NULL(win);
-	siWindowArg arg = win->arg;
 
-	switch (arg & SI_WINDOW_RENDERING_BITS) {
-		case SI_WINDOW_RENDERING_OPENGL: {
+	switch (win->renderType) {
+		case SI_RENDERING_OPENGL: {
 			maxTexRes.width += 1;
 			maxTexRes.height += 1;
 			maxTexCount = si_max(1, maxTexCount);
 			siapp_windowOpenGLInit(win, maxDrawCount, maxTexCount, maxTexRes);
 			break;
 		}
-		case SI_WINDOW_RENDERING_CPU: {
+		case SI_RENDERING_CPU: {
 			siapp_windowCPUInit(win, maxDrawCount, maxTexCount, maxTexRes);
 			win->atlas = siapp_textureAtlasMake(win, maxTexRes, maxTexCount, SI_RESIZE_DEFAULT);
 			break;
@@ -4838,7 +4871,7 @@ void siapp_windowRendererMake(siWindow* win, u32 maxDrawCount,
 b32 siapp_windowRendererChange(siWindow* win, u32 newRenderType) {
 	SI_ASSERT_NOT_NULL(win);
 
-	u32 curRender = win->arg & SI_WINDOW_RENDERING_BITS;
+	u32 curRender = win->renderType & SI_RENDERING_BITS;
 	SI_STOPIF(curRender == newRenderType, return false);
 
 	u32 maxDrawCount = win->maxDrawCount;
@@ -4848,19 +4881,19 @@ b32 siapp_windowRendererChange(siWindow* win, u32 newRenderType) {
 	siTextureResizeEnum resize = win->atlas.resizeMethod;
 
 	siapp_windowRendererDestroy(win);
-	win->arg &= ~curRender;
-	win->arg |= newRenderType;
+
+	win->renderType = newRenderType;
 	siapp_windowRendererMake(win, maxDrawCount, maxTexRes, maxTexCount);
+	siapp_windowBackgroundSet(win, bgClr);
 	siapp_textureResizeMethodChange(&win->atlas, resize);
 
-	siapp_windowBackgroundSet(win, bgClr);
 	return true;
 }
 void siapp_windowRendererDestroy(siWindow* win) {
 	SI_ASSERT_NOT_NULL(win);
-	switch (win->arg & SI_WINDOW_RENDERING_BITS) {
-		case SI_WINDOW_RENDERING_OPENGL: siapp_windowOpenGLDestroy(win); break;
-		case SI_WINDOW_RENDERING_CPU: siapp_windowCPUDestroy(win); break;
+	switch (win->renderType & SI_RENDERING_BITS) {
+		case SI_RENDERING_OPENGL: siapp_windowOpenGLDestroy(win); break;
+		case SI_RENDERING_CPU: siapp_windowCPUDestroy(win); break;
 	}
 }
 
@@ -4925,8 +4958,10 @@ const char* GetStringForEnum(GLenum value) {
 
 void DebugCallback(GLenum source, GLenum type, GLuint id, GLenum severity,
 							GLsizei length, const GLchar* message, const void* userParam) {
+	SI_STOPIF(severity == GL_DEBUG_SEVERITY_NOTIFICATION, return);
+
 	si_printf(
-		"SILI DEBUG: %s %s %i %s: '%s'\n",
+		"SILI DEBUG: %s %s %i %s: %*s\n",
 			GetStringForEnum(source), GetStringForEnum(type),
 			id, GetStringForEnum(severity), length, message
 	);
@@ -4998,8 +5033,6 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 
 	if (fbList == NULL) { /* resort to single-buffer if DB not available */
 		i32 fallbackAttribs[] = { GLX_RGBA, GLX_RED_SIZE, 8, GLX_GREEN_SIZE, 8, GLX_BLUE_SIZE, 8, GLX_ALPHA_SIZE, 8, None };
-		si_printf("fallback\n");
-
 		fbList = glXChooseFBConfig(win->display, DefaultScreen(win->display), fallbackAttribs, &fbCount);
 		SI_ASSERT(fbCount > 0);
 	}
@@ -5064,7 +5097,7 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 		glInfo.isLoaded = true;
 
 		glGetIntegerv(GL_MAJOR_VERSION, &glInfo.versionSelected.major);
-		glGetIntegerv(GL_MINOR_VERSION, &glInfo.versionSelected.major);
+		glGetIntegerv(GL_MINOR_VERSION, &glInfo.versionSelected.minor);
 
 	   if (glInfo.versionSelected.major == 0 && glInfo.versionSelected.minor == 0) {
 			siapp_messageBox(
@@ -5078,6 +5111,7 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 			return false;
 		}
 		glGetIntegerv(GL_MAX_TEXTURE_SIZE, &glInfo.texSizeMax);
+		glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &glInfo.texLenMax);
 
 		SI_STOPIF(glInfo.versionSelected.major == 0, glInfo.versionSelected.major = glInfo.versionMax.major);
 		SI_STOPIF(glInfo.versionSelected.minor == 0, glInfo.versionSelected.minor = glInfo.versionMax.minor);
@@ -5087,8 +5121,24 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-	//glEnable(GL_DEBUG_OUTPUT);
-	//glDebugMessageCallback(DebugCallback, nil);
+#if 1
+	if (glInfo.versionMax.major == 4 && glInfo.versionMax.minor >= 3) {
+		si_printf("DEBUG MODE ON\n");
+		glEnable(GL_DEBUG_OUTPUT);
+		glDebugMessageCallback(DebugCallback, nil);
+	}
+#endif
+
+	if (glInfo.versionSelected.major == 4 && glInfo.versionSelected.minor >= 4) {
+		win->renderType |= SI_RENDERINGVER_OPENGL_4_4;
+	}
+	else if (glInfo.versionSelected.major >= 3 && glInfo.versionSelected.minor >= 1) {
+		win->renderType |= SI_RENDERINGVER_OPENGL_3_1;
+	}
+	else {
+		win->renderType |= SI_RENDERINGVER_OPENGL_LEGACY;
+		goto GL_init_section;
+	}
 
 	glGenVertexArrays(1, &gl->VAO);
 	glBindVertexArray(gl->VAO);
@@ -5098,11 +5148,40 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 	SI_ASSERT_MSG(gl->programID != 0, "gl->programID cannot be zero.");
 
 	{
-		char updatedVShader[sizeof(defaultVShaderCode) + 20];
-		si_snprintf(updatedVShader, countof(updatedVShader), defaultVShaderCode, maxDrawCount);
+		i32 vertexShader;
+		{
+			char updatedVShader[sizeof(defaultVShaderCode) + 20];
+			si_snprintf(updatedVShader, countof(updatedVShader), defaultVShaderCode, maxDrawCount);
+			vertexShader = si_OpenGLShaderMake(GL_VERTEX_SHADER, updatedVShader);
+		}
 
-		i32 vertexShader = si_OpenGLShaderMake(GL_VERTEX_SHADER, updatedVShader);
-		i32 fragmentShader = si_OpenGLShaderMake(GL_FRAGMENT_SHADER, defaultFShaderCode);
+		i32 fragmentShader;
+		if (glInfo.versionSelected.major == 4) {
+			char FSHADER[countof(FSHADER_4_0) + 20];
+			si_snprintf(FSHADER, countof(FSHADER), FSHADER_4_0, glInfo.texLenMax);
+			fragmentShader = si_OpenGLShaderMake(GL_FRAGMENT_SHADER, FSHADER);
+		}
+		else {
+			/* NOTE(EimaMei): GLSL versions below 400 do not support dynamic
+			 * array indexes, meaning, we have to make a dynamic switch statement
+			 * to have the "same" effect". */
+			static char caseStr[] = " case %uu: { finalColor = texture(textures[%u], fragTex) * fragClr; break; }";
+			char* FSHADER = malloc(countof(FSHADER_3_1) + 20 + glInfo.texLenMax * (countof(caseStr) - 1) + countof(" } }"));
+
+			usize len = countof(FSHADER_3_1) - 1;
+			si_snprintf(FSHADER, countof(FSHADER_3_1) + 20, FSHADER_3_1, glInfo.texLenMax);
+
+			for_range (i, 0, glInfo.texLenMax) {
+				char buf[128];
+				usize bufLen = si_snprintf(buf, countof(buf), caseStr, i, i);
+				memcpy(&FSHADER[len], buf, bufLen - 1);
+				len += bufLen - 1;
+			}
+			memcpy(&FSHADER[len], " } }", countof(" } }"));
+
+			fragmentShader = si_OpenGLShaderMake(GL_FRAGMENT_SHADER, FSHADER);
+			free(FSHADER);
+		}
 		SI_STOPIF(vertexShader == -1, SIAPP_ERROR_MSGBOX_GL(gl->programID, "Failed to create vertex shader"); return false);
 		SI_STOPIF(fragmentShader == -1, SIAPP_ERROR_MSGBOX_GL(gl->programID, "Failed to create fragment shader"); return false);
 
@@ -5181,6 +5260,7 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 
 	glUniformMatrix4fv(gl->uniformMvp, maxDrawCount, GL_FALSE, gl->matrices->m);
 
+GL_init_section:
 	gl->vertexCounter = 0;
 	gl->drawCounter = 0;
 	gl->bgColor = SI_VEC4(1, 1, 1, 1);
@@ -5202,13 +5282,37 @@ void siapp_windowOpenGLRender(siWindow* win) {
 
 	siWinRenderingCtxOpenGL* gl = &win->render.opengl;
 
-	glUseProgram(gl->programID);
-	glBindVertexArray(gl->VAO);
-	glUniformMatrix4fv(gl->uniformMvp, gl->drawCounter, GL_FALSE, gl->matrices->m);
+	switch (win->renderType & SI_RENDERING_OPENGL_BITS) {
+		case SI_RENDERINGVER_OPENGL_LEGACY: {
+			glFinish();
+			gl->vertexCounter = 0;
+			gl->drawCounter = 0;
+			return ;
+		}
+		case SI_RENDERINGVER_OPENGL_3_1: {
+			glUseProgram(gl->programID);
+			glBindVertexArray(gl->VAO);
+			glUniformMatrix4fv(gl->uniformMvp, gl->drawCounter, GL_FALSE, gl->matrices->m);
+
+			glBindBuffer(GL_ARRAY_BUFFER, gl->VBOs[SI_VBO_POS]);
+			glBufferSubData(GL_ARRAY_BUFFER, 0, gl->vertexCounter * sizeof(siVec3), gl->vertices);
+			glBindBuffer(GL_ARRAY_BUFFER, gl->VBOs[SI_VBO_CLR]);
+			glBufferSubData(GL_ARRAY_BUFFER, 0, gl->vertexCounter * sizeof(siVec4), gl->colors);
+			glBindBuffer(GL_ARRAY_BUFFER, gl->VBOs[SI_VBO_TEX]);
+			glBufferSubData(GL_ARRAY_BUFFER, 0, gl->vertexCounter * sizeof(siVec2), gl->texCoords);
+			glBindBuffer(GL_ARRAY_BUFFER, gl->VBOs[SI_VBO_ID]);
+			glBufferSubData(GL_ARRAY_BUFFER, 0, gl->drawCounter * sizeof(siOpenGLIDs), gl->batchInfo);
+			break;
+		}
+		case SI_RENDERINGVER_OPENGL_4_4: {
+			glUseProgram(gl->programID);
+			glBindVertexArray(gl->VAO);
+			glUniformMatrix4fv(gl->uniformMvp, gl->drawCounter, GL_FALSE, gl->matrices->m);
+			break;
+		}
+	}
 
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl->VBOs[SI_VBO_ELM]);
-
-	glBindBuffer(GL_ARRAY_BUFFER, gl->VBOs[SI_VBO_POS]);
 
 	u32 count = 0;
 	for_range (i, 0, gl->drawCounter) {
@@ -5232,21 +5336,31 @@ void siapp_windowOpenGLDestroy(siWindow* win) {
 	SI_ASSERT_NOT_NULL(win);
 	siWinRenderingCtxOpenGL* gl = &win->render.opengl;
 
-	glUseProgram(gl->programID);
-	glBindVertexArray(gl->VAO);
 
-	for_range (i, 0, countof(gl->VBOs)) {
-		glBindBuffer(GL_ARRAY_BUFFER, gl->VBOs[i]);
-		glUnmapBuffer(GL_ARRAY_BUFFER);
+	switch (win->renderType & SI_RENDERING_OPENGL_BITS) {
+		case SI_RENDERINGVER_OPENGL_LEGACY: {
+			break;
+		}
+		case SI_RENDERINGVER_OPENGL_3_1: {
+			free(gl->vertices);
+			free(gl->texCoords);
+			free(gl->colors);
+			free(gl->batchInfo);
+			siFallthrough;
+		}
+		case SI_RENDERINGVER_OPENGL_4_4: {
+			glUseProgram(gl->programID);
+			glBindVertexArray(gl->VAO);
+
+			siapp_textureAtlasFree(win->atlas);
+			glDeleteBuffers(countof(gl->VBOs), gl->VBOs);
+			glDeleteVertexArrays(1, &gl->VAO);
+
+			glDeleteProgram(gl->programID);
+			si_allocatorFree(gl->alloc);
+			break;
+		}
 	}
-
-	glDeleteBuffers(countof(gl->VBOs), gl->VBOs);
-	glDeleteVertexArrays(1, &gl->VAO);
-	glDeleteTextures(1, &win->atlas.texID.opengl);
-
-	glDeleteProgram(gl->programID);
-	siapp_textureAtlasFree(win->atlas);
-	si_allocatorFree(gl->alloc);
 
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	wglDeleteContext(gl->context);
@@ -5259,10 +5373,10 @@ void siapp_windowOpenGLDestroy(siWindow* win) {
 #endif
 }
 
-void siapp_OpenGLVersionSet(siVersion ver) {
-	SI_ASSERT(si_betweenu(ver.major, 0, 4));
-	SI_ASSERT(si_betweenu(ver.minor, 0, 6));
-	glInfo.versionSelected = ver;
+void siapp_OpenGLVersionSet(i32 major, i32 minor) {
+	SI_ASSERT(si_betweenu(major, 0, 4));
+	SI_ASSERT(si_betweenu(minor, 0, 6));
+	glInfo.versionSelected = (siVersion){major, minor};
 }
 void siapp_OpenGLStencilSet(u32 stencil) { glInfo.stencilSize = stencil; }
 void siapp_OpenGLSamplesSet(u32 samples) { glInfo.sampleBuffers = samples; }
@@ -5355,7 +5469,7 @@ siMessageBoxResult siapp_messageBoxEx(const siWindow* win, cstring title, usize 
 
 	si_allocatorFree(tmp);
 	return res;
-#elif defined(SIAPP_PLATFORM_API_COCOA)
+#else
 	si_printf("%s: %s\n", title, message);
 	return 0;
 #endif

@@ -3463,7 +3463,7 @@ SIGL_FUNC_DECLARE(void, glViewport, GLint x, GLint y, GLsizei width, GLsizei hei
 #endif
 
 #if SIGL_SYSTEM_IS_WINDOWS || SIGL_SYSTEM_IS_UNIX
-	#define SIGL_FUNC_DECLARE(retType, name, ...) extern retType(GLAPIENTRY* name##SIPROC) (__VA_ARGS__); extern name##SIPROC
+	#define SIGL_FUNC_DECLARE(retType, name, ...) typedef retType(GLAPIENTRY* name##SIPROC) (__VA_ARGS__); extern name##SIPROC name
 #else
 	#define SIGL_FUNC_DECLARE(retType, name, ...) extern retType name(__VA_ARGS__)
 #endif
