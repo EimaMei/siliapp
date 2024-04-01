@@ -11,6 +11,7 @@ void secondWindowLoop(const siWindow* firstWindow);
 int main(void) {
 	siAllocator* alloc = si_allocatorMake(SI_KILO(4));
 
+	siapp_OpenGLVersionSet(3, 3);
 	siWindow* win = siapp_windowMake(
 		alloc, "Example window | ĄČĘĖĮŠŲ | 「ケケア」",
 		SI_AREA(0, 0), SI_WINDOW_DEFAULT | SI_WINDOW_OPTIMAL_SIZE | SI_WINDOW_SCALING,

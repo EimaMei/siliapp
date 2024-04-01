@@ -139,7 +139,7 @@ typedef SI_ENUM(b32, siWindowArg) {
 typedef SI_ENUM(u32, siRenderingType) {
 	SI_RENDERING_OPENGL = SI_BIT(0),
 		SI_RENDERINGVER_OPENGL_LEGACY = SI_BIT(1),
-		SI_RENDERINGVER_OPENGL_3_1 = SI_BIT(2),
+		SI_RENDERINGVER_OPENGL_3_3 = SI_BIT(2),
 		SI_RENDERINGVER_OPENGL_4_4 = SI_BIT(3),
 
 	SI_RENDERING_CPU = SI_BIT(4),
@@ -147,7 +147,7 @@ typedef SI_ENUM(u32, siRenderingType) {
 
 	SI_RENDERING_DEFAULT = SI_RENDERING_OPENGL,
 	SI_RENDERING_BITS = SI_RENDERING_OPENGL | SI_RENDERING_CPU,
-	SI_RENDERING_OPENGL_BITS = SI_RENDERINGVER_OPENGL_LEGACY | SI_RENDERINGVER_OPENGL_3_1 | SI_RENDERINGVER_OPENGL_4_4,
+	SI_RENDERING_OPENGL_BITS = SI_RENDERINGVER_OPENGL_LEGACY | SI_RENDERINGVER_OPENGL_3_3 | SI_RENDERINGVER_OPENGL_4_4,
 };
 
 typedef SI_ENUM(u8, siKeyType) {
@@ -1641,14 +1641,17 @@ typedef SI_ENUM(i32, siShaderIndex) {
 #if !defined(SIAPP_PLATFORM_API_COCOA)
 #define GL_BUFFER_MAKE(ID, var, size) \
 	do { \
-		if ((win->renderType & SI_RENDERING_OPENGL_BITS) == SI_RENDERINGVER_OPENGL_3_1) { \
+		if ((win->renderType & SI_RENDERING_OPENGL_BITS) == SI_RENDERINGVER_OPENGL_3_3) { \
 			var = (typeof(var))malloc(size); \
+			glBindBuffer(GL_ARRAY_BUFFER, gl->VBOs[ID]); \
+			glBufferData(GL_ARRAY_BUFFER, size, var, GL_DYNAMIC_DRAW); \
 		} \
 		else { \
 			glBindBuffer(GL_ARRAY_BUFFER, gl->VBOs[ID]); \
 			glBufferStorage(GL_ARRAY_BUFFER, size, nil, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT); \
 			var = glMapBufferRange(GL_ARRAY_BUFFER, 0, size, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT); \
 		} \
+		SI_ASSERT_NOT_NULL(var); \
 	} while(0)
 #else
 	#define GL_BUFFER_MAKE(ID, var, size) \
@@ -5102,7 +5105,6 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 #endif
 
 	if (glInfo.isLoaded == false) {
-		sigl_loadOpenGLAll();
 		glInfo.isLoaded = true;
 
 		glGetIntegerv(GL_MAJOR_VERSION, &glInfo.versionMax.major);
@@ -5124,6 +5126,8 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 
 		SI_STOPIF(glInfo.versionSelected.major == 0, glInfo.versionSelected.major = glInfo.versionMax.major);
 		SI_STOPIF(glInfo.versionSelected.minor == 0, glInfo.versionSelected.minor = glInfo.versionMax.minor);
+
+		sigl_loadOpenGLAllVer(glInfo.versionSelected.major, glInfo.versionSelected.minor, true);
 	}
 
 	glEnable(GL_TEXTURE_2D);
@@ -5132,7 +5136,7 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 #if 1 && !defined(SIAPP_PLATFORM_API_COCOA)
-	if (glInfo.versionMax.major == 4 && glInfo.versionMax.minor >= 3) {
+	if (glInfo.versionSelected.major == 4 && glInfo.versionSelected.minor >= 3) {
 		si_printf("DEBUG MODE ON\n");
 		glEnable(GL_DEBUG_OUTPUT);
 		glDebugMessageCallback(DebugCallback, nil);
@@ -5142,8 +5146,8 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 	if (glInfo.versionSelected.major == 4 && glInfo.versionSelected.minor >= 4) {
 		win->renderType |= SI_RENDERINGVER_OPENGL_4_4;
 	}
-	else if (glInfo.versionSelected.major >= 3 && glInfo.versionSelected.minor >= 1) {
-		win->renderType |= SI_RENDERINGVER_OPENGL_3_1;
+	else if (glInfo.versionSelected.major >= 3 && glInfo.versionSelected.minor >= 3) {
+		win->renderType |= SI_RENDERINGVER_OPENGL_3_3;
 	}
 	else {
 		win->renderType |= SI_RENDERINGVER_OPENGL_LEGACY;
@@ -5299,7 +5303,7 @@ void siapp_windowOpenGLRender(siWindow* win) {
 			gl->drawCounter = 0;
 			return ;
 		}
-		case SI_RENDERINGVER_OPENGL_3_1: {
+		case SI_RENDERINGVER_OPENGL_3_3: {
 			glUseProgram(gl->programID);
 			glBindVertexArray(gl->VAO);
 			glUniformMatrix4fv(gl->uniformMvp, gl->drawCounter, GL_FALSE, gl->matrices->m);
@@ -5354,7 +5358,7 @@ void siapp_windowOpenGLDestroy(siWindow* win) {
 		case SI_RENDERINGVER_OPENGL_LEGACY: {
 			break;
 		}
-		case SI_RENDERINGVER_OPENGL_3_1: {
+		case SI_RENDERINGVER_OPENGL_3_3: {
 			free(gl->vertices);
 			free(gl->texCoords);
 			free(gl->colors);

@@ -2981,6 +2981,8 @@ typedef void (*GLDEBUGPROC)(GLenum source, GLenum type, GLuint id, GLenum severi
 /* Loads every possible OpenGL function from 1.2 up to 4.6, including any platform
  * specific ones. */
 void sigl_loadOpenGLAll(void);
+/* */
+void sigl_loadOpenGLAllVer(int major, int minor, int osFuncs);
 /* Loads every OpenGL 1.2 function. */
 void sigl_loadOpenGL_1_2(void);
 /* Loads every OpenGL 1.3 function. */
@@ -5566,6 +5568,47 @@ void sigl_loadOpenGLAll(void) {
 #if SIGL_SYSTEM_IS_WINDOWS
 	sigl_loadOpenGLWindows();
 #endif
+}
+void sigl_loadOpenGLAllVer(int major, int minor, int osFuncs) {
+	int ogMinor = minor;
+	if (major >= 1) {
+		minor = (major != 1) ? 5 : ogMinor;
+		if (minor >= 2) { sigl_loadOpenGL_1_2(); }
+		if (minor >= 3) { sigl_loadOpenGL_1_3(); }
+		if (minor >= 4) { sigl_loadOpenGL_1_4(); }
+		if (minor >= 5) { sigl_loadOpenGL_1_5(); }
+	}
+
+	if (major >= 2) {
+		minor = (major != 2) ? 1 : ogMinor;
+		if (minor >= 0) { sigl_loadOpenGL_2_0(); }
+		if (minor >= 1) { sigl_loadOpenGL_2_1(); }
+	}
+
+	if (major >= 3) {
+		minor = (major != 3) ? 3 : ogMinor;
+		if (minor >= 0) { sigl_loadOpenGL_3_0(); }
+		if (minor >= 1) { sigl_loadOpenGL_3_1(); }
+		if (minor >= 2) { sigl_loadOpenGL_3_2(); }
+		if (minor >= 3) { sigl_loadOpenGL_3_3(); }
+	}
+
+	if (major >= 4) {
+		minor = ogMinor;
+		if (minor >= 0) { sigl_loadOpenGL_4_0(); }
+		if (minor >= 1) { sigl_loadOpenGL_4_1(); }
+		if (minor >= 2) { sigl_loadOpenGL_4_2(); }
+		if (minor >= 3) { sigl_loadOpenGL_4_3(); }
+		if (minor >= 4) { sigl_loadOpenGL_4_4(); }
+		if (minor >= 5) { sigl_loadOpenGL_4_5(); }
+		if (minor >= 6) { sigl_loadOpenGL_4_6(); }
+	}
+
+	if (osFuncs) {
+#if SIGL_SYSTEM_IS_WINDOWS
+		sigl_loadOpenGLWindows();
+#endif
+	}
 }
 void sigl_loadOpenGL_1_2(void) {
 #if !defined(SIGL_NO_GL_1_2_H_FUNCS)
