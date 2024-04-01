@@ -13,9 +13,10 @@ int main(void) {
 
 	siWindow* win = siapp_windowMake(
 		alloc, "Example window | ĄČĘĖĮŠŲ | 「ケケア」",
-		SI_AREA(0, 0), (SI_WINDOW_DEFAULT & SI_WINDOW_RENDERING_OPENGL) | SI_WINDOW_OPTIMAL_SIZE | SI_WINDOW_SCALING,
+		SI_AREA(0, 0), SI_WINDOW_DEFAULT | SI_WINDOW_OPTIMAL_SIZE | SI_WINDOW_SCALING,
 		4, 0, SI_AREA(0, 0)
 	);
+	si_printf("yes\n");
 	siapp_windowBackgroundSet(win, SI_RGB(0, 0, 0));
 
 	siDropEvent drops[2];
@@ -127,12 +128,13 @@ int main(void) {
 				}
 			}
             siapp_dropEventEnd(drop);
-
+#if 1
 			siapp_drawRect(
 				win,
 				SI_RECT(i * widthHalf, 0, widthHalf, win->originalSize.height),
 				sideClrs[i]
 			);
+#endif
 		}
 
 		siColor gradient[3] = {
@@ -141,16 +143,18 @@ int main(void) {
 		siapp_windowGradientSet(win, gradient, countof(gradient));
 
 		i32 length = win->originalSize.height - 50;
+#if 1
 		siapp_drawTriangleIsosceles(
 			win,
 			SI_POINT(widthHalf - length / 2, 50), length, 60,
 			SI_RGB(0, 0, 255)
 		);
+#endif
 
 		siapp_windowRender(win);
 		siapp_windowSwapBuffers(win);
 	}
-    siapp_cursorFree(customCursor);
+    //siapp_cursorFree(customCursor);
 
 	for_range (i, 0, countof(drops)) {
 		siapp_windowDragAreaEnd(win, &drops[i]);

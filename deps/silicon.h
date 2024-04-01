@@ -28,9 +28,8 @@
 */
 
 #ifndef SILICON_H
-#include <CoreFoundation/CoreFoundation.h>
-#include <CoreGraphics/CGImage.h>
-#include <os/availability.h>
+#include <ApplicationServices/ApplicationServices.h>
+#include <CoreVideo/CVDisplayLink.h>
 #include <objc/runtime.h>
 #include <objc/message.h>
 

@@ -107,11 +107,19 @@ extern "C" {
 
 #if defined(SIGL_NO_OPENGL_TYPES)
 	#define SIGL_NO_GL_1_1_H_TYPES
+	#define SIGL_NO_GL_1_2_H_TYPES
 	#define SIGL_NO_GL_1_5_H_TYPES
 	#define SIGL_NO_GL_2_0_H_TYPES
 	#define SIGL_NO_GL_3_0_H_TYPES
-	#define SIGL_NO_GL_1_2_H_TYPES
 #endif /* SIGL_NO_OPENGL_TYPES */
+
+#if defined(__APPLE__)
+	#define SIGL_NO_GL_4_2_H_FUNCS
+	#define SIGL_NO_GL_4_3_H_FUNCS
+	#define SIGL_NO_GL_4_4_H_FUNCS
+	#define SIGL_NO_GL_4_5_H_FUNCS
+	#define SIGL_NO_GL_4_6_H_FUNCS
+#endif
 
 #if SIGL_SYSTEM_IS_WINDOWS && !defined(SIGL_NO_WINDOWS_H)
 	#define NOMINMAX            1
@@ -3013,6 +3021,7 @@ void sigl_loadOpenGLWindows(void);
 
 
 #if !defined(__gl_h_) && !defined(__GL_H__) && !defined(SIGL_NO_GL_1_1_H_FUNCS)
+
 #define SIGL_FUNC_DECLARE(retType, name, ...) GLAPI retType GLAPIENTRY name(__VA_ARGS__)
 
 #if defined(SIGL_INCLUDE_DEPRECATED_GL_1_1_FUNCTIONS)
@@ -3453,7 +3462,11 @@ SIGL_FUNC_DECLARE(void, glViewport, GLint x, GLint y, GLsizei width, GLsizei hei
 #undef SIGL_FUNC_DECLARE
 #endif
 
-#define SIGL_FUNC_DECLARE(retType, name, ...) typedef retType (GLAPIENTRY* name##SIPROC) (__VA_ARGS__); extern name##SIPROC name
+#if SIGL_SYSTEM_IS_WINDOWS || SIGL_SYSTEM_IS_UNIX
+	#define SIGL_FUNC_DECLARE(retType, name, ...) extern retType(GLAPIENTRY* name##SIPROC) (__VA_ARGS__); extern name##SIPROC
+#else
+	#define SIGL_FUNC_DECLARE(retType, name, ...) extern retType name(__VA_ARGS__)
+#endif
 
 #if !defined(SIGL_NO_GL_1_2_H_FUNCS)
 SIGL_FUNC_DECLARE(void, glDrawRangeElements, GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const void* indices);
@@ -4522,7 +4535,11 @@ extern __GLXextFuncPtr glXGetProcAddress(const GLubyte *procname);
 
 #if defined(SIGL_IMPLEMENTATION)
 
-#define SIGL_FUNC_DECLARE(retType, name, ...) name##SIPROC name
+#if SIGL_SYSTEM_IS_WINDOWS || SIGL_SYSTEM_IS_UNIX
+	#define SIGL_FUNC_DECLARE(retType, name, ...) name##SIPROC name
+#else
+	#define SIGL_FUNC_DECLARE(retType, name, ...) typedef int name ## sili
+#endif
 
 #if !defined(SIGL_NO_GL_1_2_H_FUNCS)
 SIGL_FUNC_DECLARE(void, glDrawRangeElements, GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const void* indices);

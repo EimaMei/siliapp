@@ -1,7 +1,7 @@
 CC = gcc
 OUTPUT = build
 NAME = test
-OS = LINUX
+OS = MAC
 
 SRC-DIR = src
 SRC-FILES = $(notdir $(wildcard $(SRC-DIR)/*.c))
