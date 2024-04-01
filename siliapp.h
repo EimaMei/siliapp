@@ -1638,6 +1638,7 @@ typedef SI_ENUM(i32, siShaderIndex) {
 #define i32ToNDCX(num, windowCord) (((+2.0f * (num)) / (windowCord)) - 1.0f)
 #define i32ToNDCY(num, windowCord) (((-2.0f * (num)) / (windowCord)) + 1.0f)
 
+#if !defined(SIAPP_PLATFORM_API_COCOA)
 #define GL_BUFFER_MAKE(ID, var, size) \
 	do { \
 		if ((win->renderType & SI_RENDERING_OPENGL_BITS) == SI_RENDERINGVER_OPENGL_3_1) { \
@@ -1649,11 +1650,20 @@ typedef SI_ENUM(i32, siShaderIndex) {
 			var = glMapBufferRange(GL_ARRAY_BUFFER, 0, size, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT); \
 		} \
 	} while(0)
+#else
+	#define GL_BUFFER_MAKE(ID, var, size) \
+	do { \
+		var = (typeof(var))malloc(size); \
+		glBindBuffer(GL_ARRAY_BUFFER, gl->VBOs[ID]); \
+		glBufferData(GL_ARRAY_BUFFER, size, var, GL_DYNAMIC_DRAW); \
+		SI_ASSERT_NOT_NULL(var); \
+	} while(0)
+#endif
 
 static siOpenGLInfo glInfo = {false, {0, 0}, 0, 0, {0, 0}, 8, 4, false, 0};
 
 static const char defaultVShaderCode[] = MULTILINE_STR(
-	\x23version 130\n
+	\x23version 140\n
 
 	in vec3 pos;
 	in vec2 tex;
@@ -1680,7 +1690,6 @@ static const char FSHADER_4_0[] = MULTILINE_STR(
 	flat in uint fragTexID;
 	out vec4 finalColor;
 
-
 	uniform sampler2D textures[%u];
 
 	void main() {
@@ -1688,7 +1697,7 @@ static const char FSHADER_4_0[] = MULTILINE_STR(
 	}
 );
 static const char FSHADER_3_1[] = MULTILINE_STR(
-	\x23version 150\n
+	\x23version 140\n
 
 	in vec2 fragTex;
 	in vec4 fragClr;
@@ -5070,7 +5079,6 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 		NSOpenGLPFAOpenGLProfile, NSOpenGLProfileVersion4_1Core,
 		0
 	};
-	CVDisplayLinkRef displayLink;
 	NSOpenGLPixelFormat* format = NSOpenGLPixelFormat_initWithAttributes(defaultAttribs);
 	NSOpenGLView* view = NSOpenGLView_initWithFrame(NSMakeRect(0, 0, gl->size.width, gl->size.height), format);
 	NSOpenGLView_prepareOpenGL(view);
@@ -5080,9 +5088,10 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 	NSOpenGLContext* context = NSOpenGLView_openGLContext(view);
 	NSOpenGLContext_setValues(context, &swapInt, NSOpenGLContextParameterSwapInterval);
 
+	CVDisplayLinkRef displayLink;
 	CGDirectDisplayID displayID = CGMainDisplayID();
 	CVDisplayLinkCreateWithCGDisplay(displayID, &displayLink);
-	CVDisplayLinkSetOutputCallback(displayLink, displayCallback, win);
+	CVDisplayLinkSetOutputCallback(displayLink, displayCallback, win->hwnd);
 	CVDisplayLinkStart(displayLink);
 
 	NSOpenGLContext_makeCurrentContext(context);
@@ -5096,10 +5105,10 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 		sigl_loadOpenGLAll();
 		glInfo.isLoaded = true;
 
-		glGetIntegerv(GL_MAJOR_VERSION, &glInfo.versionSelected.major);
-		glGetIntegerv(GL_MINOR_VERSION, &glInfo.versionSelected.minor);
+		glGetIntegerv(GL_MAJOR_VERSION, &glInfo.versionMax.major);
+		glGetIntegerv(GL_MINOR_VERSION, &glInfo.versionMax.minor);
 
-	   if (glInfo.versionSelected.major == 0 && glInfo.versionSelected.minor == 0) {
+	   if (glInfo.versionMax.major == 0 && glInfo.versionMax.minor == 0) {
 			siapp_messageBox(
 				"OpenGL not present",
 				"OpenGL version on this system is set to 0.0, meaning it doesn't exist.\n"
@@ -5118,10 +5127,11 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 	}
 
 	glEnable(GL_TEXTURE_2D);
+	RGL_opengl_getError();
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-#if 1
+#if 1 && !defined(SIAPP_PLATFORM_API_COCOA)
 	if (glInfo.versionMax.major == 4 && glInfo.versionMax.minor >= 3) {
 		si_printf("DEBUG MODE ON\n");
 		glEnable(GL_DEBUG_OUTPUT);
@@ -5296,10 +5306,13 @@ void siapp_windowOpenGLRender(siWindow* win) {
 
 			glBindBuffer(GL_ARRAY_BUFFER, gl->VBOs[SI_VBO_POS]);
 			glBufferSubData(GL_ARRAY_BUFFER, 0, gl->vertexCounter * sizeof(siVec3), gl->vertices);
+
 			glBindBuffer(GL_ARRAY_BUFFER, gl->VBOs[SI_VBO_CLR]);
 			glBufferSubData(GL_ARRAY_BUFFER, 0, gl->vertexCounter * sizeof(siVec4), gl->colors);
+
 			glBindBuffer(GL_ARRAY_BUFFER, gl->VBOs[SI_VBO_TEX]);
 			glBufferSubData(GL_ARRAY_BUFFER, 0, gl->vertexCounter * sizeof(siVec2), gl->texCoords);
+
 			glBindBuffer(GL_ARRAY_BUFFER, gl->VBOs[SI_VBO_ID]);
 			glBufferSubData(GL_ARRAY_BUFFER, 0, gl->drawCounter * sizeof(siOpenGLIDs), gl->batchInfo);
 			break;

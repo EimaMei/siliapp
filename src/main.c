@@ -151,7 +151,7 @@ int main(void) {
 		siapp_windowRender(win);
 		siapp_windowSwapBuffers(win);
 	}
-    siapp_cursorFree(customCursor);
+    //siapp_cursorFree(customCursor);
 
 	for_range (i, 0, countof(drops)) {
 		siapp_windowDragAreaEnd(win, &drops[i]);
