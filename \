@@ -1671,16 +1671,16 @@ static const char defaultVShaderCode[] = MULTILINE_STR(
 	in vec3 pos;
 	in vec2 tex;
 	in vec4 clr;
-	in uvec2 info;
+	//in uvec2 info;
 
 	out vec2 fragTex;
 	out vec4 fragClr;
 	//flat out uint fragTexID;
-	//uniform mat4 mvp[%u];
+	uniform mat4 mvp[%u];
 
 	void main() {
-		//fragTex = tex;
-		fragClr = clr;
+		fragTex = tex;
+		//fragClr = clr;
 		//fragTexID = info.x;
 		gl_Position = vec4(pos, 1.0);//* mvp[info.y];
 	}
@@ -1688,15 +1688,15 @@ static const char defaultVShaderCode[] = MULTILINE_STR(
 static const char FSHADER_4_0[] = MULTILINE_STR(
 	\x23version 400\n
 
-	//in vec2 fragTex;
+	in vec2 fragTex;
 	in vec4 fragClr;
-	//flat in uint fragTexID;
+	flat in uint fragTexID;
 	out vec4 finalColor;
 
 	uniform sampler2D textures[%u];
 
 	void main() {
-		finalColor = fragClr;/*texture(textures[fragTexID], fragTex) * fragClr */
+		finalColor = vec4(1.0f, 0.5f, 0.2f, 1.0f)/*texture(textures[fragTexID], fragTex) * fragClr */;
 	}
 );
 static const char FSHADER_3_1[] = MULTILINE_STR(
@@ -4298,6 +4298,7 @@ void siapp_drawRectF(siWindow* win, siVec4 rect, siColor color) {
 			siWinRenderingCtxCPU* cpu = &win->render.cpu;
 			siRect r = SI_RECT(rect.x, rect.y, rect.z, rect.w);
 
+#if defined(SIAPP_PLATFORM_API_X11)
 			f32 alpha = color.a / 255.0f;
 			color.r *= alpha;
 			color.g *= alpha;
@@ -4312,19 +4313,23 @@ void siapp_drawRectF(siWindow* win, siVec4 rect, siColor color) {
 					cpu->buffer[index + 1] *= alpha;
 					cpu->buffer[index + 2] *= alpha;
 
-#if defined(SIAPP_PLATFORM_API_X11)
 					cpu->buffer[index + 0] += color.b;
 					cpu->buffer[index + 1] += color.g;
 					cpu->buffer[index + 2] += color.r;
-#else
-					cpu->buffer[index + 0] += color.r;
-					cpu->buffer[index + 1] += color.g;
-					cpu->buffer[index + 2] += color.b;
-#endif
 
 					index += 4;
 				}
 			}
+#else
+			siColor* buffer = (siColor*)cpu->buffer;
+			for_range (y, r.y, r.y + r.height) {
+				usize index = y * cpu->size.width + r.x;
+				for_range (x, r.x, r.x + r.width) {
+					buffer[index] = color;
+					index += 1;
+				}
+			}
+#endif
 			break;
 		}
 	}
@@ -5223,6 +5228,14 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 		glDeleteShader(vertexShader);
 		glDeleteShader(fragmentShader);
 	}
+	glLinkProgram(gl->programID);
+
+	GLint linkStatus;
+	glGetProgramiv(gl->programID, GL_LINK_STATUS, &linkStatus);
+	if (linkStatus != GL_TRUE) {
+		SIAPP_ERROR_MSGBOX_GL(gl->programID, "Failed to link programID.");
+		return false;
+	}
 
 	glUseProgram(gl->programID);
 
@@ -5230,14 +5243,6 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 	glBindAttribLocation(gl->programID, SI_SHADER_TEX, "tex");
 	glBindAttribLocation(gl->programID, SI_SHADER_CLR, "clr");
 	glBindAttribLocation(gl->programID, SI_SHADER_ID,  "info");
-
-	GLint linkStatus;
-	glLinkProgram(gl->programID); /* NOTE(EimaMei): YOU MUST LINK AFTER BINDING THE LOCATIONS. */
-	glGetProgramiv(gl->programID, GL_LINK_STATUS, &linkStatus);
-	if (linkStatus != GL_TRUE) {
-		SIAPP_ERROR_MSGBOX_GL(gl->programID, "Failed to link programID.");
-		return false;
-	}
 
 	GL_BUFFER_MAKE(SI_VBO_POS, gl->vertices,  sizeof(siVec3) * 4 * maxDrawCount);
 	GL_BUFFER_MAKE(SI_VBO_CLR, gl->colors,    sizeof(siVec4) * 4 * maxDrawCount);
@@ -5328,11 +5333,9 @@ void siapp_windowOpenGLRender(siWindow* win) {
 			glBindBuffer(GL_ARRAY_BUFFER, gl->VBOs[SI_VBO_POS]);
 			glBufferSubData(GL_ARRAY_BUFFER, 0, gl->vertexCounter * sizeof(siVec3), gl->vertices);
 
+
 			glBindBuffer(GL_ARRAY_BUFFER, gl->VBOs[SI_VBO_TEX]);
 			glBufferSubData(GL_ARRAY_BUFFER, 0, gl->vertexCounter * sizeof(siVec2), gl->texCoords);
-
-			glBindBuffer(GL_ARRAY_BUFFER, gl->VBOs[SI_VBO_CLR]);
-			glBufferSubData(GL_ARRAY_BUFFER, 0, gl->vertexCounter * sizeof(siVec4), gl->colors);
 
 			glBindBuffer(GL_ARRAY_BUFFER, gl->VBOs[SI_VBO_ID]);
 			glBufferSubData(GL_ARRAY_BUFFER, 0, gl->drawCounter * sizeof(siOpenGLIDs), gl->batchInfo);
@@ -5349,7 +5352,7 @@ void siapp_windowOpenGLRender(siWindow* win) {
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl->VBOs[SI_VBO_ELM]);
 
 	u32 count = 0;
-	for_range (i, 0, gl->drawCounter) {
+	for_range (i, 0, 1) {//gl->drawCounter) {
         const siOpenGLDrawCMD* cmd = &gl->CMDs[i];
 
 		glDrawElementsInstanced(

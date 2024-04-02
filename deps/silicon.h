@@ -80,7 +80,7 @@ SICDEF SEL si_impl_SEL_exists(const char* name, const char* filename, int line);
 #define SILICON_ARRAY_IMPLEMENTATION
 #endif
 
-#if defined(usize)
+#if !defined(usize)
 typedef size_t    usize;
 typedef ptrdiff_t isize;
 #endif
@@ -159,6 +159,7 @@ typedef void NSSavePanel;
 typedef void NSOpenPanel;
 typedef void NSColorPanel;
 typedef void NSBundle;
+typedef void CALayer;
 #ifndef __OBJC__
 typedef void NSDictionary;
 typedef void NSURL;
@@ -430,6 +431,7 @@ enum {
 	NSOpenGLPFAAllowOfflineRenderers NS_OPENGL_ENUM_DEPRECATED(10.5, 10.14)  =  96,  /* allow use of offline renderers               */
 	NSOpenGLPFAAcceleratedCompute    NS_OPENGL_ENUM_DEPRECATED(10.0, 10.14)  =  97,	/* choose a hardware accelerated compute device */
 
+	NSOpenGLProfileVersionLegacy 	 NS_OPENGL_ENUM_DEPRECATED(10.7, 10.14)  = 0x1000,
 	NSOpenGLPFAOpenGLProfile         NS_OPENGL_ENUM_DEPRECATED(10.7, 10.14)  =  99,    /* specify an OpenGL Profile to use             */
 	NSOpenGLProfileVersion3_2Core    NS_OPENGL_ENUM_DEPRECATED(10.0, 10.14)  = 0x3200, /* The 3.2 Profile of OpenGL */
 	NSOpenGLProfileVersion4_1Core    NS_OPENGL_ENUM_DEPRECATED(10.0, 10.14)  = 0x3200, /* The 4.1 profile of OpenGL */
@@ -765,6 +767,13 @@ SICDEF void NSView_addSubview(NSView* view, NSView* subview);
 /* */
 SICDEF void NSView_registerForDraggedTypes(NSView* view, siArray(NSPasteboardType) newTypes);
 
+/* ====== NSView properties ====== */
+/* The Core Animation layer that the view uses as its backing store. */
+si_define_property(NSView, CALayer*, layer, Layer, view);
+/* A Boolean value indicating whether the view uses a layer as its backing store. */
+si_define_property(NSView, bool, wantslayer, WantsLayer, view);
+
+
 /* ============ NSTextField class ============ */
 /* ====== NSTextField properties ====== */
 /* */
@@ -1017,13 +1026,13 @@ SICDEF NSBitmapImageRep* NSBitmapImageRep_initWithBitmapData(unsigned char** pla
 
 /* ============ NSSavePanel class ============ */
 /* ====== NSSavePanel properties ====== */
-/* A Boosi_lean value that indicates whether the panel displays UI for creating directories. */
+/* A boolean value that indicates whether the panel displays UI for creating directories. */
 si_define_property(NSSavePanel, bool, canCreateDirectories, CanCreateDirectories, savePanel);
 /* (Deprsi_ecated!) An array of filename extensions or UTIs that represent the allowed file types for the panel. */
 si_define_property(NSSavePanel, siArray(const char*), allowedFileTypes, AllowedFileTypes, savePanel);
-/* The csi_urrent directory shown in the panel. */
+/* The current directory shown in the panel. */
 si_define_property(NSSavePanel, NSURL*, directoryURL, DirectoryURL, savePanel);
-/* The usi_ser-editable filename currently shown in the name field. */
+/* The user-editable filename currently shown in the name field. */
 si_define_property(NSSavePanel, const char*, nameFieldStringValue, NameFieldStringValue, savePanel);
 /* A URL that contains the fully specified location of the targeted file. */
 SICDEF NSURL* NSSavePanel_URL(NSSavePanel* savePanel);
@@ -1044,29 +1053,29 @@ SICDEF NSURL* NSURL_fileURLWithPath(const char* path);
 
 /* ============ NSOpenPanel class ============ */
 /* ====== NSOpenPanel properties ====== */
-/* A Boosi_lean that indicates whether the user can choose files in the panel. */
+/* A boolean that indicates whether the user can choose files in the panel. */
 si_define_property(NSOpenPanel, bool, canChooseFiles, CanChooseFiles, openPanel);
-/* A Boosi_lean that indicates whether the user can choose directories in the panel. */
+/* A boolean that indicates whether the user can choose directories in the panel. */
 si_define_property(NSOpenPanel, bool, canChooseDirectories, CanChooseDirectories, openPanel);
-/* A Boosi_lean value that indicates whether the panel displays UI for creating directories. */
+/* A boolean value that indicates whether the panel displays UI for creating directories. */
 si_define_property(NSOpenPanel, bool, canCreateDirectories, CanCreateDirectories, openPanel);
-/* A Boosi_lean that indicates whether the panel resolves aliases. */
+/* A boolean that indicates whether the panel resolves aliases. */
 si_define_property(NSOpenPanel, bool, resolvesAliases, ResolvesAliases, openPanel);
-/* A Boosi_lean that indicates whether the user may select multiple files and directories. */
+/* A boolean that indicates whether the user may select multiple files and directories. */
 si_define_property(NSOpenPanel, bool, allowsMultipleSelection, AllowsMultipleSelection, openPanel);
-/* A Boosi_lean value that indicates whether the panel's accessory view is visible. */
+/* A boolean value that indicates whether the panel's accessory view is visible. */
 si_define_property(NSOpenPanel, bool, accessoryViewDisclosed, AccessoryViewDisclosed, openPanel);
 /* An array of URLs, each of which contains the fully specified location of a selected file or directory. */
 SICDEF siArray(NSURL*) NSOpenPanel_URLs(NSOpenPanel* openPanel);
-/* A Boosi_lean value that indicates how the panel responds to iCloud documents that aren't fully downloaded locally. */
+/* A boolean value that indicates how the panel responds to iCloud documents that aren't fully downloaded locally. */
 si_define_property(NSOpenPanel, bool, canDownloadUbiquitousContents, CanDownloadUbiquitousContents, openPanel);
-/* A Boosi_lean value that indicates whether the panel's accessory view is visible. */
+/* A boolean value that indicates whether the panel's accessory view is visible. */
 si_define_property(NSOpenPanel, bool, canResolveUbiquitousConflicts, CanResolveUbiquitousConflicts, openPanel);
-/* (Deprsi_ecated!) An array of filename extensions or UTIs that represent the allowed file types for the panel. */
+/* (Deprecated!) An array of filename extensions or UTIs that represent the allowed file types for the panel. */
 si_define_property(NSOpenPanel, siArray(const char*), allowedFileTypes, AllowedFileTypes, openPanel);
-/* The csi_urrent directory shown in the panel. */
+/* The current directory shown in the panel. */
 si_define_property(NSOpenPanel, NSURL*, directoryURL, DirectoryURL, openPanel);
-/* The usi_ser-editable filename currently shown in the name field. */
+/* The user-editable filename currently shown in the name field. */
 si_define_property(NSOpenPanel, const char*, nameFieldStringValue, NameFieldStringValue, openPanel);
 /* A URL that contains the fully specified location of the targeted file. */
 SICDEF NSURL* NSOpenPanel_URL(NSOpenPanel* openPanel);
@@ -1076,6 +1085,12 @@ SICDEF NSURL* NSOpenPanel_URL(NSOpenPanel* openPanel);
 SICDEF NSOpenPanel* NSOpenPanel_openPanel(void);
 /* Displays the panel and begins its event loop with the current working (or last-selected) directory as the default starting point. */
 SICDEF NSModalResponse NSOpenPanel_runModal(NSOpenPanel* openPanel);
+
+
+/* ============ CALayer class ============ */
+/* ====== CALayer properties ====== */
+/* An object that provides the contents of the layer. Animatable. */
+si_define_property(CALayer, id, contents, Contents, layer);
 
 /* ============ OpenGL ============ */
 /* TODO(EimaMei): Add documentation & deprecations macros for the OpenGL functions. */
@@ -1448,7 +1463,10 @@ enum{
 	NS_OPENGL_CONTEXT_MAKE_CURRENT_CONTEXT_CODE,
 	NS_BITMAPIMAGEREP_BITMAP_CODE,
 	NS_BITMAPIMAGEREP_INIT_BITMAP_CODE,
+	NS_VIEW_WANTSLAYER_CODE,
 	NS_VIEW_SET_WANTSLAYER_CODE,
+	NS_VIEW_LAYER_CODE,
+	NS_VIEW_SET_LAYER_CODE,
 	NS_STRING_WIDTH_UTF8_STRING_CODE,
 	NS_ARRAY_SI_ARRAY_CODE,
 	NS_STROKE_LINE_CODE,
@@ -1546,6 +1564,8 @@ enum{
 	NS_SAVE_PANEL_NAME_FIELD_STRING_VALUE_CODE,
 	NS_SAVE_PANEL_URL_CODE,
 	NS_SAVE_PANEL_RUN_MODAL_CODE,
+	CA_LAYER_CONTENTS_CODE,
+	CA_LAYER_SET_CONTENTS_CODE,
 	NSURL_PATH_CODE,
 	NSURL_FILE_URL_WITH_PATH_CODE,
 	NS_AUTORELEASE_CODE,
@@ -1722,7 +1742,10 @@ void si_initNS(void) {
 	SI_NS_FUNCTIONS[NS_OPENGL_CONTEXT_MAKE_CURRENT_CONTEXT_CODE] = sel_registerName("makeCurrentContext");
 	SI_NS_FUNCTIONS[NS_BITMAPIMAGEREP_BITMAP_CODE] = sel_registerName("bitmapData");
 	SI_NS_FUNCTIONS[NS_BITMAPIMAGEREP_INIT_BITMAP_CODE] = sel_registerName("initWithBitmapDataPlanes:pixelsWide:pixelsHigh:bitsPerSample:samplesPerPixel:hasAlpha:isPlanar:colorSpaceName:bitmapFormat:bytesPerRow:bitsPerPixel:");
+	SI_NS_FUNCTIONS[NS_VIEW_WANTSLAYER_CODE] = sel_registerName("wantsLayer");
 	SI_NS_FUNCTIONS[NS_VIEW_SET_WANTSLAYER_CODE] = sel_registerName("setWantsLayer:");
+	SI_NS_FUNCTIONS[NS_VIEW_LAYER_CODE] = sel_registerName("layer");
+	SI_NS_FUNCTIONS[NS_VIEW_SET_LAYER_CODE] = sel_registerName("setLayer:");
 	SI_NS_FUNCTIONS[NS_STRING_WIDTH_UTF8_STRING_CODE] = sel_registerName("stringWithUTF8String:");
 	SI_NS_FUNCTIONS[NS_STRING_IS_EQUAL_CODE] = sel_registerName("isEqual:");
 	SI_NS_FUNCTIONS[NS_ARRAY_SI_ARRAY_CODE] = sel_registerName("initWithObjects:count:");
@@ -1840,6 +1863,8 @@ void si_initNS(void) {
 	SI_NS_FUNCTIONS[NS_SAVE_PANEL_NAME_FIELD_STRING_VALUE_CODE] = sel_registerName("nameFieldStringValue");
 	SI_NS_FUNCTIONS[NS_SAVE_PANEL_URL_CODE] = sel_registerName("URL");
 	SI_NS_FUNCTIONS[NS_SAVE_PANEL_RUN_MODAL_CODE] = sel_registerName("runModal");
+	SI_NS_FUNCTIONS[CA_LAYER_CONTENTS_CODE] = sel_registerName("contents");
+	SI_NS_FUNCTIONS[CA_LAYER_SET_CONTENTS_CODE] = sel_registerName("setContents:");
 	SI_NS_FUNCTIONS[NSURL_PATH_CODE] = sel_registerName("path");
 	SI_NS_FUNCTIONS[NSURL_FILE_URL_WITH_PATH_CODE] = sel_registerName("fileURLWithPath:");
 	SI_NS_FUNCTIONS[NS_AUTORELEASE_CODE] = sel_registerName("autorelease");
@@ -2436,7 +2461,6 @@ void NSWindow_contentView_setWantsLayer(NSWindow* window, bool wantsLayer) {
 	void* func = SI_NS_FUNCTIONS[NS_VIEW_SET_WANTSLAYER_CODE];
 
 	NSView* contentView = NSWindow_contentView(window);
-
 	objc_msgSend_void_bool(contentView, func, wantsLayer);
 }
 SICDEF void NSWindow_close(NSWindow* window) {
@@ -2469,6 +2493,26 @@ void NSView_registerForDraggedTypes(NSView* view, siArray(NSPasteboardType) newT
 	objc_msgSend_void_id(view, func, array);
 
 	NSRelease(array);
+}
+
+bool NSView_wantsLayer(NSView* view) {
+	void* func = SI_NS_FUNCTIONS[NS_VIEW_WANTSLAYER_CODE];
+
+	return objc_msgSend_bool(view, func);
+}
+void NSView_setWantsLayer(NSView* view, bool wantsLayer) {
+	void* func = SI_NS_FUNCTIONS[NS_VIEW_SET_WANTSLAYER_CODE];
+
+	objc_msgSend_void_bool(view, func, wantsLayer);
+}
+
+CALayer* NSView_layer(NSView* view) {
+	void* func = SI_NS_FUNCTIONS[NS_VIEW_LAYER_CODE];
+	return (CALayer*)objc_msgSend_id(view, func);
+}
+void NSView_setLayer(NSView* view, CALayer* layer) {
+	void* func = SI_NS_FUNCTIONS[NS_VIEW_SET_LAYER_CODE];
+	objc_msgSend_void_id(view, func, layer);
 }
 
 const char* NSTextField_stringValue(NSTextField* obj) {
@@ -3182,6 +3226,15 @@ NSURL* NSSavePanel_URL(NSSavePanel* savePanel) {
 NSModalResponse NSSavePanel_runModal(NSSavePanel* savePanel) {
 	void* func = SI_NS_FUNCTIONS[NS_SAVE_PANEL_RUN_MODAL_CODE];
 	return objc_msgSend_uint(savePanel, func);
+}
+
+id CALayer_contents(CALayer* layer) {
+	void* func = SI_NS_FUNCTIONS[CA_LAYER_CONTENTS_CODE];
+	return objc_msgSend_id(layer, func);
+}
+void CALayer_setContents(CALayer* layer, id contents) {
+	void* func = SI_NS_FUNCTIONS[CA_LAYER_SET_CONTENTS_CODE];
+	objc_msgSend_void_id(layer, func, contents);
 }
 
 const char* NSURL_path(NSURL* url) {

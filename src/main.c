@@ -8,16 +8,18 @@ void secondWindowLoop(const siWindow* firstWindow);
 #define CURSOR_W 16
 #define CURSOR_H 32
 
+void RGL_opengl_getError(void);
+
 int main(void) {
 	siAllocator* alloc = si_allocatorMake(SI_KILO(4));
 
-	siapp_OpenGLVersionSet(3, 3);
+	//siapp_OpenGLVersionSet(4, 1);
 	siWindow* win = siapp_windowMake(
 		alloc, "Example window | ĄČĘĖĮŠŲ | 「ケケア」",
 		SI_AREA(0, 0), SI_WINDOW_DEFAULT | SI_WINDOW_OPTIMAL_SIZE | SI_WINDOW_SCALING,
 		SI_RENDERING_OPENGL, 4, 0, SI_AREA(0, 0)
 	);
-	//siapp_windowBackgroundSet(win, SI_RGB(0, 0, 0));
+	siapp_windowBackgroundSet(win, SI_RGB(0, 0, 0));
 
 	siDropEvent drops[2];
 
@@ -141,13 +143,11 @@ int main(void) {
 		siapp_windowGradientSet(win, gradient, countof(gradient));
 
 		i32 length = win->originalSize.height - 50;
-#if 1
 		siapp_drawTriangleIsosceles(
 			win,
 			SI_POINT(widthHalf - length / 2, 50), length, 60,
 			SI_RGB(0, 0, 255)
 		);
-#endif
 
 		siapp_windowRender(win);
 		siapp_windowSwapBuffers(win);
