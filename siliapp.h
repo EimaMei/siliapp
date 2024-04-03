@@ -1616,36 +1616,31 @@ NSSize si__osxWindowResize(void* self, SEL sel, NSSize frameSize) {
 	siWindow* win = nil;
 	object_getInstanceVariable(self, "siWindow", (void*)&win);
 	SI_ASSERT_NOT_NULL(win);
+
 	siWinRenderingCtxCPU* cpu = &win->render.cpu;
 	siapp__resizeWindow(win, frameSize.width, frameSize.height);
-
-	NSView* view = NSWindow_contentView(win->hwnd);
-		((void(*)(id, SEL, NSRect))objc_msgSend)(NSView_layer(view),
-			sel_registerName("setFrame:"),
-			NSMakeRect(0, 0, cpu->size.width, cpu->size.height));
-	siapp_windowRender(win);
-	CATransaction_commit();
-	CATransaction_begin();
-	CATransaction_setDisableActions(false);
 	return frameSize;
 }
 
 void si__windowWillStartLiveResize(void* self) {
 	siWindow* win = nil;
 	object_getInstanceVariable(self, "siWindow", (void*)&win);
-	CATransaction_begin();
-	siapp_windowRender(win);
+	siWinRenderingCtxCPU* cpu = &win->render.cpu;
+
 }
 void si__windowWillEndLiveResize(void* self) {
 	siWindow* win = nil;
 	object_getInstanceVariable(self, "siWindow", (void*)&win);
+#if 0
 	NSView* view = NSWindow_contentView(win->hwnd);
 	siWinRenderingCtxCPU* cpu = &win->render.cpu;
-		((void(*)(id, SEL, NSRect))objc_msgSend)(NSView_layer(view),
-			sel_registerName("setFrame:"),
-			NSMakeRect(0, 0, cpu->size.width, cpu->size.height));
+	((void(*)(id, SEL, NSRect))objc_msgSend)(NSView_layer(view),
+		sel_registerName("setFrame:"),
+		NSMakeRect(0, 0, cpu->size.width, cpu->size.height)
+	);
+#endif
+
 	siapp_windowRender(win);
-	CATransaction_commit();
 
 }
 CVReturn displayCallback(CVDisplayLinkRef displayLink, const CVTimeStamp* inNow,
@@ -5540,6 +5535,12 @@ void siapp_windowCPURender(siWindow* win) {
 	NSImage_addRepresentation(image, rep);
 
 	NSView* view = NSWindow_contentView(win->hwnd);
+
+	((void(*)(id, SEL, NSRect))objc_msgSend)(NSView_layer(view),
+		sel_registerName("setFrame:"),
+		NSMakeRect(0, win->e.windowSize.height - cpu->size.height - 29, cpu->size.width, cpu->size.height));
+
+	((void(*)(id, SEL, NSString*))objc_msgSend)(NSView_layer(view), sel_registerName("setContentsGravity:"), NSString_stringWithUTF8String("kCAGravityTopLeft"));
 	CALayer_setContents(NSView_layer(view), (id)image);
 
 	release(image);
