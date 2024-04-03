@@ -1160,11 +1160,17 @@ void siapp__resizeWindow(siWindow* win, i32 width, i32 height) {
 		  	);
 		  	break;
 		}
+		case SI_RENDERING_CPU: {
+
+			break;
+		}
 	}
 }
 #endif
 
 #if defined(SIAPP_PLATFORM_API_WIN32)
+
+#define SI__CHANNEL_COUNT 3
 
 intern siByte __win32KBState[256];
 
@@ -1540,6 +1546,8 @@ HRESULT IDropTarget_Drop(IDropTarget* target, IDataObject* pDataObj,
 }
 #endif
 
+#define SI__CHANNEL_COUNT 4
+
 #elif defined(SIAPP_PLATFORM_API_X11)
 
 intern Display* SI_X11_DISPLAY = nil;
@@ -1604,15 +1612,42 @@ b32 si__osxWindowClose(NSWindow* self) {
 	win->e.type.isClosed = true;
 	return true;
 }
-NSSize windowDidResize(NSWindow* self, SEL sel, NSSize frameSize) {
+NSSize si__osxWindowResize(void* self, SEL sel, NSSize frameSize) {
 	siWindow* win = nil;
 	object_getInstanceVariable(self, "siWindow", (void*)&win);
-
+	SI_ASSERT_NOT_NULL(win);
+	siWinRenderingCtxCPU* cpu = &win->render.cpu;
 	siapp__resizeWindow(win, frameSize.width, frameSize.height);
+
+	NSView* view = NSWindow_contentView(win->hwnd);
+		((void(*)(id, SEL, NSRect))objc_msgSend)(NSView_layer(view),
+			sel_registerName("setFrame:"),
+			NSMakeRect(0, 0, cpu->size.width, cpu->size.height));
+	siapp_windowRender(win);
+	CATransaction_commit();
+	CATransaction_begin();
+	CATransaction_setDisableActions(false);
 	return frameSize;
 }
 
+void si__windowWillStartLiveResize(void* self) {
+	siWindow* win = nil;
+	object_getInstanceVariable(self, "siWindow", (void*)&win);
+	CATransaction_begin();
+	siapp_windowRender(win);
+}
+void si__windowWillEndLiveResize(void* self) {
+	siWindow* win = nil;
+	object_getInstanceVariable(self, "siWindow", (void*)&win);
+	NSView* view = NSWindow_contentView(win->hwnd);
+	siWinRenderingCtxCPU* cpu = &win->render.cpu;
+		((void(*)(id, SEL, NSRect))objc_msgSend)(NSView_layer(view),
+			sel_registerName("setFrame:"),
+			NSMakeRect(0, 0, cpu->size.width, cpu->size.height));
+	siapp_windowRender(win);
+	CATransaction_commit();
 
+}
 CVReturn displayCallback(CVDisplayLinkRef displayLink, const CVTimeStamp* inNow,
 		const CVTimeStamp* inOutputTime, CVOptionFlags flagsIn, CVOptionFlags* flagsOut,
 		void* displayLinkContext) {
@@ -1620,6 +1655,8 @@ CVReturn displayCallback(CVDisplayLinkRef displayLink, const CVTimeStamp* inNow,
 	SI_UNUSED(displayLink); SI_UNUSED(inNow); SI_UNUSED(inOutputTime); SI_UNUSED(flagsIn);
 	SI_UNUSED(flagsOut); SI_UNUSED(displayLinkContext);
 }
+
+#define SI__CHANNEL_COUNT 3
 
 
 #endif
@@ -1821,14 +1858,17 @@ siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
 		u32 maxTexCount, siArea maxTexRes) {
 	SI_ASSERT_NOT_NULL(alloc);
 	SI_ASSERT_NOT_NULL(name);
+
+	siWindow* win = si_mallocItem(alloc, siWindow);
+	si_printf("%i\n", NSThread_isMainThread());
 #if defined(SIAPP_PLATFORM_API_COCOA)
+
 	if (NSApp == nil) {
 		NSApp = NSApplication_sharedApplication();
 		NSApplication_setActivationPolicy(NSApp, NSApplicationActivationPolicyRegular);
+		si_func_to_SEL_with_name(SI_DEFAULT, "windowShouldClose", (void*)si__osxWindowClose);
 	}
 #endif
-
-	siWindow* win = si_mallocItem(alloc, siWindow);
 
 	if (arg & SI_WINDOW_OPTIMAL_SIZE) {
 		SI_ASSERT_MSG(size.width == 0 && size.height == 0, "The selected resolution must be set to zeros beforehand to use 'SI_WINDOW_OPTIMAL_SIZE'.");
@@ -1922,11 +1962,10 @@ siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
 	win->__x11BlankCursor = 0;
 	win->__x11DndHead = (rawptr)USIZE_MAX;
 #elif defined(SIAPP_PLATFORM_API_COCOA)
-	si_func_to_SEL_with_name(SI_DEFAULT, "windowShouldClose", (void*)si__osxWindowClose);
 
 	NSWindow* hwnd = NSWindow_init(
 		NSMakeRect(pos.x, pos.y, size.width, size.height),
-        NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable,
+		NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable,
 		NSBackingStoreBuffered, false
 	);
     NSWindow_setTitle(hwnd, name);
@@ -1941,7 +1980,9 @@ siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
 		"L"
 	);
 	SI_ASSERT(res);
-	res = class_addMethod(delegateClass, sel_registerName("windowWillResize:toSize:"), (IMP)windowDidResize, "{NSSize=ff}@:{NSSize=ff}");
+	res = class_addMethod(delegateClass, sel_registerName("windowWillResize:toSize:"), (IMP)si__osxWindowResize, "{NSSize=ff}@:{NSSize=ff}");
+	res = class_addMethod(delegateClass, sel_registerName("windowWillStartLiveResize:"), (IMP)si__windowWillStartLiveResize, 0);
+	res = class_addMethod(delegateClass, sel_registerName("windowWillEndLiveResize"), (IMP)si__windowWillEndLiveResize, 0);
 	SI_ASSERT(res);
 
 	id delegate = NSInit(NSAlloc(delegateClass));
@@ -2437,22 +2478,12 @@ void siapp_windowClear(const siWindow* win) {
 			const siWinRenderingCtxCPU* cpu = &win->render.cpu;
 
 			u32 pixelCount = cpu->size.width * cpu->size.height;
-#if defined(SIAPP_PLATFORM_API_X11)
-			siColor* data = (siColor*)cpu->buffer;
-
-			for_range (i, 0, pixelCount) {
-				*data = cpu->bgColor;
-				data += 1;
-			}
-#else
 			siByte* data = cpu->buffer;
 
 			for_range (i, 0, pixelCount) {
-				memcpy(data, &cpu->bgColor, 3);
-				data += 3;
+				memcpy(data, &cpu->bgColor, SI__CHANNEL_COUNT);
+				data += SI__CHANNEL_COUNT;
 			}
-
-#endif
 			break;
 		}
 	}
@@ -4357,11 +4388,8 @@ void siapp_drawRectF(siWindow* win, siVec4 rect, siColor color) {
 			alpha = 1.0f - alpha;
 
 			for_range (y, r.y, r.y + r.height) {
-#if defined(SIAPP_PLATFORM_API_X11)
-				usize index = y * (4 * cpu->size.width) + r.x * 4;
-#else
-				usize index = y * (3 * cpu->size.width) + r.x * 3;
-#endif
+				usize index = y * (SI__CHANNEL_COUNT * cpu->size.width) + r.x * SI__CHANNEL_COUNT;
+
 				for_range (x, r.x, r.x + r.width) {
 					cpu->buffer[index + 0] *= alpha;
 					cpu->buffer[index + 1] *= alpha;
@@ -4371,13 +4399,13 @@ void siapp_drawRectF(siWindow* win, siVec4 rect, siColor color) {
 					cpu->buffer[index + 0] += color.b;
 					cpu->buffer[index + 1] += color.g;
 					cpu->buffer[index + 2] += color.r;
-					index += 4;
 #else
 					cpu->buffer[index + 0] += color.r;
 					cpu->buffer[index + 1] += color.g;
 					cpu->buffer[index + 2] += color.b;
-					index += 3;
 #endif
+
+					index += SI__CHANNEL_COUNT;
 				}
 			}
 			break;
@@ -4416,12 +4444,12 @@ void siapp__cpuDrawImage(siWinRenderingCtxCPU* cpu, siPoint pos, siImage* img,
 	usize imgY = img->y1;
 
 	for_range (y, pos.y, pos.y + img->size.height) {
-		usize index = y * (4 * cpu->size.width) + pos.x * 4,
+		usize index = y * (SI__CHANNEL_COUNT * cpu->size.width) + pos.x * SI__CHANNEL_COUNT,
 			  imgIndex = imgY * atlas->totalWidth + imgX;
 		for_range (x, pos.x, pos.x + img->size.width) {
 			siapp_cpuBufferSetPixelFromImg(cpu, index, imgIndex, tint);
 
-			index += 4;
+			index += SI__CHANNEL_COUNT;
 			imgIndex += 1;
 		}
 		imgY += 1;
@@ -4441,14 +4469,14 @@ void siapp__cpuDrawImageNearest(siWinRenderingCtxCPU* cpu, siRect r, siImage* im
 
 
 	for_range (y, r.y, r.y + r.height) {
-		usize index = y * (4 * cpu->size.width) + r.x * 4;
+		usize index = y * (SI__CHANNEL_COUNT * cpu->size.width) + r.x * SI__CHANNEL_COUNT;
 		usize imgIndexY = (i32)imgY * atlas->totalWidth;
 		f32 imgIndexX = img->x1;
 
 		for_range (x, r.x, r.x + r.width) {
 			siapp_cpuBufferSetPixelFromImg(cpu, index, (usize)(imgIndexY + imgIndexX), tint);
 
-			index += 4;
+			index += SI__CHANNEL_COUNT;
 			imgIndexX += scaleW;
 		}
 		imgY += scaleH;
@@ -5508,7 +5536,7 @@ void siapp_windowCPURender(siWindow* win) {
 		"NSDeviceRGBColorSpace", 0,
 		cpu->size.width * 3, 24
 	);
-	id image = NSImage_initWithSize(NSMakeSize(cpu->size.width, cpu->size.height));
+	id image = NSAlloc(SI_NS_CLASSES[NS_IMAGE_CODE]);
 	NSImage_addRepresentation(image, rep);
 
 	NSView* view = NSWindow_contentView(win->hwnd);

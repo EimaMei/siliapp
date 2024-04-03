@@ -1,7 +1,9 @@
 #include <siliapp.h>
 #define DISABLE_SECOND_WINDOW 1
 
-#include <stb_image_write.h>
+#if defined(SIAPP_PLATFORM_API_COCOA) && DISABLE_SECOND_WINDOW != 1
+#error "Creating a window on a subthread is not feasible on MacOS."
+#endif
 
 #if DISABLE_SECOND_WINDOW != 1
 void secondWindowLoop(const siWindow* firstWindow);
@@ -19,7 +21,7 @@ int main(void) {
 	siWindow* win = siapp_windowMake(
 		alloc, "Example window | ĄČĘĖĮŠŲ | 「ケケア」",
 		SI_AREA(0, 0), SI_WINDOW_DEFAULT | SI_WINDOW_OPTIMAL_SIZE | SI_WINDOW_SCALING,
-		SI_RENDERING_CPU, 4, 0, SI_AREA(0, 0)
+		SI_RENDERING_CPU, 4, 2, SI_AREA(1200, 850)
 	);
 	siapp_windowBackgroundSet(win, SI_RGB(128, 0, 0));
 	siapp_drawRect(win, SI_RECT(0, 0, 100, 250), SI_RGB(0, 0, 255));
@@ -59,9 +61,13 @@ int main(void) {
 	si_threadStart(&t);
 #endif
 
+	siImage img = siapp_imageLoad(&win->atlas, "res/castle.jpg");
+	siapp_textureResizeMethodChange(&win->atlas, SI_RESIZE_NEAREST);
+
 	while (siapp_windowIsRunning(win) && !siapp_windowKeyClicked(win, SK_ESC)) {
 		siapp_windowUpdate(win, false);
 		const siWindowEvent* e = siapp_windowEventGet(win);
+
 
 		if (e->type.windowMove) {
 			si_printf("Window is being moved: %ix%i\n", e->windowPos.x, e->windowPos.y);
@@ -139,6 +145,7 @@ int main(void) {
 				sideClrs[i]
 			);
 		}
+		siapp_drawImage(win, SI_RECT(0, 0, 100, 100), img);
 
 		siColor gradient[3] = {
 			SI_RGB(255, 0, 0), SI_RGB(0, 255, 0), SI_RGB(0, 0, 255)
@@ -174,7 +181,7 @@ void secondWindowLoop(const siWindow* firstWindow) {
 
 	siWindow* win = siapp_windowMakeEx(
 		alloc, "Second window", SI_POINT(200, 200), SI_AREA(400, 400),
-		SI_WINDOW_RESIZABLE | SI_WINDOW_RENDERING_OPENGL, 2, 0, SI_AREA(0, 0)
+		SI_WINDOW_RESIZABLE, SI_RENDERING_OPENGL, 2, 0, SI_AREA(0, 0)
 	);
 	siapp_windowBackgroundSet(win, SI_RGB(113, 57, 173));
 
