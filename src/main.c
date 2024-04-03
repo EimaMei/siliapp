@@ -1,6 +1,8 @@
 #include <siliapp.h>
 #define DISABLE_SECOND_WINDOW 1
 
+#include <stb_image_write.h>
+
 #if DISABLE_SECOND_WINDOW != 1
 void secondWindowLoop(const siWindow* firstWindow);
 #endif
@@ -17,9 +19,10 @@ int main(void) {
 	siWindow* win = siapp_windowMake(
 		alloc, "Example window | ĄČĘĖĮŠŲ | 「ケケア」",
 		SI_AREA(0, 0), SI_WINDOW_DEFAULT | SI_WINDOW_OPTIMAL_SIZE | SI_WINDOW_SCALING,
-		SI_RENDERING_OPENGL, 4, 0, SI_AREA(0, 0)
+		SI_RENDERING_CPU, 4, 0, SI_AREA(0, 0)
 	);
-	siapp_windowBackgroundSet(win, SI_RGB(0, 0, 0));
+	siapp_windowBackgroundSet(win, SI_RGB(128, 0, 0));
+	siapp_drawRect(win, SI_RECT(0, 0, 100, 250), SI_RGB(0, 0, 255));
 
 	siDropEvent drops[2];
 
@@ -57,7 +60,7 @@ int main(void) {
 #endif
 
 	while (siapp_windowIsRunning(win) && !siapp_windowKeyClicked(win, SK_ESC)) {
-		siapp_windowUpdate(win, true);
+		siapp_windowUpdate(win, false);
 		const siWindowEvent* e = siapp_windowEventGet(win);
 
 		if (e->type.windowMove) {
@@ -141,6 +144,9 @@ int main(void) {
 			SI_RGB(255, 0, 0), SI_RGB(0, 255, 0), SI_RGB(0, 0, 255)
 		};
 		siapp_windowGradientSet(win, gradient, countof(gradient));
+
+		siWinRenderingCtxCPU* cpu = &win->render.cpu;
+		//stbi_write_png("buffer.png", cpu->size.width, cpu->size.height, 3, cpu->buffer, cpu->size.width * 3);
 
 		i32 length = win->originalSize.height - 50;
 		siapp_drawTriangleIsosceles(

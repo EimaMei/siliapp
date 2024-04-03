@@ -590,6 +590,16 @@ SICDEF CGSize NSSizeToCGSize(NSSize nssize);
 SICDEF bool NSPointInRect(NSPoint aPoint, NSRect aRect);
 
 /* ============ NSColor class ============ */
+/* ====== NSColor functions ====== */
+/* */
+SICDEF void NSColor_set(NSColor* color);
+/* */
+SICDEF NSColor* NSColor_colorWithRGB(CGFloat red, CGFloat green, CGFloat blue, CGFloat alpha);
+/* */
+SICDEF NSColor* NSColor_colorWithSRGB(CGFloat red, CGFloat green, CGFloat blue, CGFloat alpha);
+/* Creates a color object using the given opacity and grayscale values. */
+SICDEF NSColor* NSColor_colorWithCalibrated(CGFloat white, CGFloat alpha);
+
 /* ====== NSColor properties ====== */
 /* */
 SICDEF NSColor* NSColor_clearColor(void);
@@ -620,15 +630,6 @@ SICDEF NSArray* si_array_to_NSArray(siArray(void) array);
 SICDEF NSUInteger NSArray_count(NSArray* array);
 SICDEF void* NSArray_objectAtIndex(NSArray* array, NSUInteger index);
 
-/* ====== NSColor functions ====== */
-/* */
-SICDEF void NSColor_set(NSColor* color);
-/* */
-SICDEF NSColor* NSColor_colorWithRGB(CGFloat red, CGFloat green, CGFloat blue, CGFloat alpha);
-/* */
-SICDEF NSColor* NSColor_colorWithSRGB(CGFloat red, CGFloat green, CGFloat blue, CGFloat alpha);
-/* Creates a color object using the given opacity and grayscale values. */
-SICDEF NSColor* NSColor_colorWithCalibrated(CGFloat white, CGFloat alpha);
 
 /* ====== NSBezierPath functions ====== */
 /* */
@@ -640,8 +641,10 @@ SICDEF NSAutoreleasePool* NSAutoreleasePool_init(void);
 SICDEF void NSAutoreleasePool_drain(NSAutoreleasePool* pool);
 
 /* ====== NSDate functions ====== */
-/* */
+/* A date object representing a date in the distant future. */
 SICDEF NSDate* NSDate_distantFuture(void);
+/* A date object representing a date in the distant past. */
+SICDEF NSDate* NSDate_distantPast(void);
 
 /* ============ NSProcessInfo class ============ */
 /* ====== NSProcessInfo functions ====== */
@@ -772,7 +775,8 @@ SICDEF void NSView_registerForDraggedTypes(NSView* view, siArray(NSPasteboardTyp
 si_define_property(NSView, CALayer*, layer, Layer, view);
 /* A Boolean value indicating whether the view uses a layer as its backing store. */
 si_define_property(NSView, bool, wantslayer, WantsLayer, view);
-
+/* (nullable, readonly, unsafe_unretained) The view’s window object, if it is installed in a window. */
+NSWindow* NSView_window(NSView* view);
 
 /* ============ NSTextField class ============ */
 /* ====== NSTextField properties ====== */
@@ -944,10 +948,18 @@ SICDEF NSImage* NSImage_initWithFile(const char* path);
 SICDEF NSImage* NSImage_initWithCGImage(CGImageRef cgImage, NSSize size);
 /* Adds the specified image representation object to the image. */
 SICDEF void NSImage_addRepresentation(NSImage* image, NSImageRep* imageRep);
+/* Removes and releases the specified image representation. */
+SICDEF void NSImage_removeRepresentation(NSImage* image, NSImageRep* imageRep);
 /* Returns the application’s current cursor. */
 SICDEF NSCursor* NSCursor_currentCursor(void);
 
 /* ============ NSGraphicsContext class ============ */
+/* ====== NSGraphicsContext functions ====== */
+/* Creates a new graphics context for drawing into a window. */
+NSGraphicsContext* NSGraphicsContext_graphicsContextWithWindow(NSWindow* window);
+/* Forces any buffered operations or data to be sent to the graphics context’s destination. */
+void NSGraphicsContext_flushGraphics(NSGraphicsContext* context);
+
 /* ====== NSGraphicsContext properties ====== */
 /* */
 #if (OS_X_VERSION_MAX_ALLOWED < macos_version(10, 5)) /* 'currentContext' doesn't exist in OS X 10.5+. */
@@ -1083,7 +1095,8 @@ SICDEF NSURL* NSOpenPanel_URL(NSOpenPanel* openPanel);
 /* ====== NSOpenPanel functions ====== */
 /* Creates a new Open panel and initializes it with a default configuration. */
 SICDEF NSOpenPanel* NSOpenPanel_openPanel(void);
-/* Displays the panel and begins its event loop with the current working (or last-selected) directory as the default starting point. */
+/* Displays the panel and begins its event loop with the current working (or last-selected)
+ * directory as the default starting point. */
 SICDEF NSModalResponse NSOpenPanel_runModal(NSOpenPanel* openPanel);
 
 
@@ -1091,6 +1104,23 @@ SICDEF NSModalResponse NSOpenPanel_runModal(NSOpenPanel* openPanel);
 /* ====== CALayer properties ====== */
 /* An object that provides the contents of the layer. Animatable. */
 si_define_property(CALayer, id, contents, Contents, layer);
+/* A Boolean indicating whether the layer is displayed. Animatable. */
+si_define_property(CALayer, bool, isHidden, Hidden, layer);
+
+/* ============ CATransaction class ============ */
+/* ====== CATransaction functions ====== */
+/* Begin a new transaction for the current thread. */
+void CATransaction_begin(void);
+/* Commit all changes made during the current transaction. */
+void CATransaction_commit(void);
+/* Commit all changes made during the current transaction. */
+void CATransaction_flush(void);
+/* Returns whether actions triggered as a result of property changes made within
+ * this transaction group are suppressed. */
+bool CATransaction_disableActions(void);
+/* Sets whether actions triggered as a result of property changes made within this
+ * transaction group are suppressed. */
+void CATransaction_setDisableActions(bool flag);
 
 /* ============ OpenGL ============ */
 /* TODO(EimaMei): Add documentation & deprecations macros for the OpenGL functions. */
@@ -1331,6 +1361,8 @@ enum { /* classes */
 	NS_SLIDER_CODE,
 	NS_URL_CODE,
 	NS_BUNDLE_CODE,
+	CA_TRANSACTION_CODE,
+
 	NS_CLASS_LEN
 };
 
@@ -1425,6 +1457,7 @@ enum{
 	NS_IMAGE_INIT_WITH_FILE_CODE,
 	NS_IMAGE_INIT_WITH_CGIMAGE_CODE,
 	NS_IMAGE_ADD_REPRESENTATION_CODE,
+	NS_IMAGE_REMOVE_REPRESENTATION_CODE,
 	NS_CURSOR_CURRENT_CURSOR_CODE,
 	NS_GRAPHICS_CONTEXT_SET_CURRENT_CONTEXT_CODE,
 	NS_CURSOR_IMAGE_CODE,
@@ -1465,6 +1498,7 @@ enum{
 	NS_BITMAPIMAGEREP_INIT_BITMAP_CODE,
 	NS_VIEW_WANTSLAYER_CODE,
 	NS_VIEW_SET_WANTSLAYER_CODE,
+	NS_VIEW_WINDOW_CODE,
 	NS_VIEW_LAYER_CODE,
 	NS_VIEW_SET_LAYER_CODE,
 	NS_STRING_WIDTH_UTF8_STRING_CODE,
@@ -1472,6 +1506,7 @@ enum{
 	NS_STROKE_LINE_CODE,
 	NS_AUTO_RELEASE_POOL_INIT_CODE,
 	NS_DISTANT_FUTURE_CODE,
+	NS_DISTANT_PAST_CODE,
 	NS_RETAIN_CODE,
 	NS_ARRAY_COUNT_CODE,
 	NS_OBJECT_AT_INDEX_CODE,
@@ -1566,6 +1601,14 @@ enum{
 	NS_SAVE_PANEL_RUN_MODAL_CODE,
 	CA_LAYER_CONTENTS_CODE,
 	CA_LAYER_SET_CONTENTS_CODE,
+	CA_LAYER_IS_HIDDEN_CODE,
+	CA_LAYER_SET_HIDDEN_CODE,
+	CA_LAYER_SET_NEEDS_DISPLAY_CODE,
+	CA_TRANSACTION_BEGIN_CODE,
+	CA_TRANSACTION_COMMIT_CODE,
+	CA_TRANSACTION_FLUSH_CODE,
+	CA_TRANSACTION_DISABLE_ACTIONS_CODE,
+	CA_TRANSACTION_SET_DISABLE_ACTIONS_CODE,
 	NSURL_PATH_CODE,
 	NSURL_FILE_URL_WITH_PATH_CODE,
 	NS_AUTORELEASE_CODE,
@@ -1584,7 +1627,8 @@ enum{
 	NS_STRING_IS_EQUAL_CODE,
 	NS_WINDOW_SET_MAX_SIZE_CODE,
 	NS_WINDOW_SET_MIN_SIZE_CODE,
-	NS_GRAPHICS_CONTEXT_WIDTH_WINDOW_CODE,
+	NS_GRAPHICS_CONTEXT_WITH_WINDOW_CODE,
+	NS_GRAPHICS_CONTEXT_FLUSH_GRAPHICS_CODE,
 	NS_CURSOR_PERFORM_SELECTOR,
 
 	NS_FUNC_LEN
@@ -1630,6 +1674,7 @@ void si_initNS(void) {
 	SI_NS_CLASSES[NS_SLIDER_CODE] = objc_getClass("NSSlider");
 	SI_NS_CLASSES[NS_URL_CODE] = objc_getClass("NSURL");
 	SI_NS_CLASSES[NS_BUNDLE_CODE] = objc_getClass("NSBundle");
+	SI_NS_CLASSES[CA_TRANSACTION_CODE] = objc_getClass("CATransaction");
 
 	SI_NS_FUNCTIONS[NS_APPLICATION_SET_ACTIVATION_POLICY_CODE] = sel_registerName("setActivationPolicy:");
 	SI_NS_FUNCTIONS[NS_APPLICATION_SAPP_CODE] = sel_registerName("sharedApplication");
@@ -1703,6 +1748,7 @@ void si_initNS(void) {
 	SI_NS_FUNCTIONS[NS_IMAGE_INIT_WITH_FILE_CODE] = sel_registerName("initWithFile:");
 	SI_NS_FUNCTIONS[NS_IMAGE_INIT_WITH_CGIMAGE_CODE] = sel_registerName("initWithCGImage:size:");
 	SI_NS_FUNCTIONS[NS_IMAGE_ADD_REPRESENTATION_CODE] = sel_registerName("addRepresentation:");
+	SI_NS_FUNCTIONS[NS_IMAGE_REMOVE_REPRESENTATION_CODE] = sel_registerName("removeRepresentation:");
 	SI_NS_FUNCTIONS[NS_CURSOR_CURRENT_CURSOR_CODE] = sel_registerName("currentCursor");
 	SI_NS_FUNCTIONS[NS_GRAPHICS_CONTEXT_SET_CURRENT_CONTEXT_CODE] = sel_registerName("setCurrentContext:");
 	SI_NS_FUNCTIONS[NS_CURSOR_IMAGE_CODE] = sel_registerName("image");
@@ -1743,6 +1789,7 @@ void si_initNS(void) {
 	SI_NS_FUNCTIONS[NS_BITMAPIMAGEREP_BITMAP_CODE] = sel_registerName("bitmapData");
 	SI_NS_FUNCTIONS[NS_BITMAPIMAGEREP_INIT_BITMAP_CODE] = sel_registerName("initWithBitmapDataPlanes:pixelsWide:pixelsHigh:bitsPerSample:samplesPerPixel:hasAlpha:isPlanar:colorSpaceName:bitmapFormat:bytesPerRow:bitsPerPixel:");
 	SI_NS_FUNCTIONS[NS_VIEW_WANTSLAYER_CODE] = sel_registerName("wantsLayer");
+	SI_NS_FUNCTIONS[NS_VIEW_WINDOW_CODE] = sel_registerName("window");
 	SI_NS_FUNCTIONS[NS_VIEW_SET_WANTSLAYER_CODE] = sel_registerName("setWantsLayer:");
 	SI_NS_FUNCTIONS[NS_VIEW_LAYER_CODE] = sel_registerName("layer");
 	SI_NS_FUNCTIONS[NS_VIEW_SET_LAYER_CODE] = sel_registerName("setLayer:");
@@ -1758,6 +1805,7 @@ void si_initNS(void) {
 	SI_NS_FUNCTIONS[NS_STROKE_LINE_CODE] = sel_registerName("strokeLine:");
 	SI_NS_FUNCTIONS[NS_AUTO_RELEASE_POOL_INIT_CODE] = sel_registerName("init");
 	SI_NS_FUNCTIONS[NS_DISTANT_FUTURE_CODE] = sel_registerName("distantFuture");
+	SI_NS_FUNCTIONS[NS_DISTANT_PAST_CODE] = sel_registerName("distantPast");
 	SI_NS_FUNCTIONS[NS_FRAME_CODE] = sel_registerName("frame");
 	SI_NS_FUNCTIONS[NS_SCREEN_MAIN_SCREEN_CODE] = sel_registerName("mainScreen");
 	SI_NS_FUNCTIONS[NS_RETAIN_CODE] = sel_registerName("retain");
@@ -1865,6 +1913,14 @@ void si_initNS(void) {
 	SI_NS_FUNCTIONS[NS_SAVE_PANEL_RUN_MODAL_CODE] = sel_registerName("runModal");
 	SI_NS_FUNCTIONS[CA_LAYER_CONTENTS_CODE] = sel_registerName("contents");
 	SI_NS_FUNCTIONS[CA_LAYER_SET_CONTENTS_CODE] = sel_registerName("setContents:");
+	SI_NS_FUNCTIONS[CA_LAYER_IS_HIDDEN_CODE] = sel_registerName("isHidden");
+	SI_NS_FUNCTIONS[CA_LAYER_SET_NEEDS_DISPLAY_CODE] = sel_registerName("setNeedsDisplay");
+	SI_NS_FUNCTIONS[CA_LAYER_SET_HIDDEN_CODE] = sel_registerName("setHidden:");
+	SI_NS_FUNCTIONS[CA_TRANSACTION_BEGIN_CODE] = sel_registerName("begin");
+	SI_NS_FUNCTIONS[CA_TRANSACTION_COMMIT_CODE] = sel_registerName("commit");
+	SI_NS_FUNCTIONS[CA_TRANSACTION_FLUSH_CODE] = sel_registerName("flush");
+	SI_NS_FUNCTIONS[CA_TRANSACTION_DISABLE_ACTIONS_CODE] = sel_registerName("disableActions");
+	SI_NS_FUNCTIONS[CA_TRANSACTION_SET_DISABLE_ACTIONS_CODE] = sel_registerName("setDisableActions:");
 	SI_NS_FUNCTIONS[NSURL_PATH_CODE] = sel_registerName("path");
 	SI_NS_FUNCTIONS[NSURL_FILE_URL_WITH_PATH_CODE] = sel_registerName("fileURLWithPath:");
 	SI_NS_FUNCTIONS[NS_AUTORELEASE_CODE] = sel_registerName("autorelease");
@@ -1880,7 +1936,8 @@ void si_initNS(void) {
 	SI_NS_FUNCTIONS[NS_WINDOW_STYLE_MASK_CODE] = sel_registerName("styleMask");
 	SI_NS_FUNCTIONS[NS_WINDOW_SET_MAX_SIZE_CODE] = sel_registerName("setMinSize:");
 	SI_NS_FUNCTIONS[NS_WINDOW_SET_MIN_SIZE_CODE] = sel_registerName("setMaxSize:");
-	SI_NS_FUNCTIONS[NS_GRAPHICS_CONTEXT_WIDTH_WINDOW_CODE] = sel_registerName("graphicsContextWithWindow:");
+	SI_NS_FUNCTIONS[NS_GRAPHICS_CONTEXT_WITH_WINDOW_CODE] = sel_registerName("graphicsContextWithWindow:");
+	SI_NS_FUNCTIONS[NS_GRAPHICS_CONTEXT_FLUSH_GRAPHICS_CODE] = sel_registerName("flushGraphics:");
 	SI_NS_FUNCTIONS[NS_CURSOR_PERFORM_SELECTOR] = sel_registerName("performSelector:");
 }
 
@@ -2019,6 +2076,13 @@ void NSAutoreleasePool_drain(NSAutoreleasePool* pool) {
 SICDEF NSDate* NSDate_distantFuture(void) {
 	void* nsclass = SI_NS_CLASSES[NS_DATE_CODE];
 	void* func = SI_NS_FUNCTIONS[NS_DISTANT_FUTURE_CODE];
+
+	return objc_msgSend_id(nsclass, func);
+}
+
+SICDEF NSDate* NSDate_distantPast(void) {
+	void* nsclass = SI_NS_CLASSES[NS_DATE_CODE];
+	void* func = SI_NS_FUNCTIONS[NS_DISTANT_PAST_CODE];
 
 	return objc_msgSend_id(nsclass, func);
 }
@@ -2394,8 +2458,13 @@ void NSGraphicsContext_setCurrentContext(NSGraphicsContext* context, NSGraphicsC
 }
 
 NSGraphicsContext* NSGraphicsContext_graphicsContextWithWindow(NSWindow* window) {
-	void* func = SI_NS_FUNCTIONS[NS_GRAPHICS_CONTEXT_WIDTH_WINDOW_CODE];
+	void* func = SI_NS_FUNCTIONS[NS_GRAPHICS_CONTEXT_WITH_WINDOW_CODE];
 	return objc_msgSend_id_id(SI_NS_CLASSES[NS_GRAPHICS_CONTEXT_CODE], func, window);
+}
+
+void NSGraphicsContext_flushGraphics(NSGraphicsContext* context) {
+	void* func = SI_NS_FUNCTIONS[NS_GRAPHICS_CONTEXT_FLUSH_GRAPHICS_CODE];
+	objc_msgSend_void(context, func);
 }
 
 void NSMenuItem_setSubmenu(NSMenuItem* item, NSMenu* submenu) {
@@ -2504,6 +2573,11 @@ void NSView_setWantsLayer(NSView* view, bool wantsLayer) {
 	void* func = SI_NS_FUNCTIONS[NS_VIEW_SET_WANTSLAYER_CODE];
 
 	objc_msgSend_void_bool(view, func, wantsLayer);
+}
+
+NSWindow* NSView_window(NSView* view) {
+	void* func = SI_NS_FUNCTIONS[NS_VIEW_WINDOW_CODE];
+	return (NSWindow*)objc_msgSend_id(view, func);
 }
 
 CALayer* NSView_layer(NSView* view) {
@@ -2940,6 +3014,11 @@ void NSImage_addRepresentation(NSImage* image, NSImageRep* imageRep) {
 	objc_msgSend_void_id(image, func, imageRep);
 }
 
+void NSImage_removeRepresentation(NSImage* image, NSImageRep* imageRep) {
+	void* func = SI_NS_FUNCTIONS[NS_IMAGE_REMOVE_REPRESENTATION_CODE];
+	objc_msgSend_void_id(image, func, imageRep);
+}
+
 NSCursor* NSCursor_currentCursor(void) {
 	void* nclass = SI_NS_CLASSES[NS_CURSOR_CODE];
 	void* func = SI_NS_FUNCTIONS[NS_CURSOR_CURRENT_CURSOR_CODE];
@@ -3236,6 +3315,55 @@ void CALayer_setContents(CALayer* layer, id contents) {
 	void* func = SI_NS_FUNCTIONS[CA_LAYER_SET_CONTENTS_CODE];
 	objc_msgSend_void_id(layer, func, contents);
 }
+
+bool CALayer_isHidden(CALayer* layer) {
+	void* func = SI_NS_FUNCTIONS[CA_LAYER_IS_HIDDEN_CODE];
+	return objc_msgSend_bool(layer, func);
+}
+void CALayer_setHidden(CALayer* layer, bool isHidden) {
+	void* func = SI_NS_FUNCTIONS[CA_LAYER_SET_HIDDEN_CODE];
+	objc_msgSend_void_bool(layer, func, isHidden);
+}
+
+void CALayer_setNeedsDisplay(CALayer* layer) {
+	void* func = SI_NS_FUNCTIONS[CA_LAYER_SET_NEEDS_DISPLAY_CODE];
+	objc_msgSend_void(layer, func);
+}
+
+void CATransaction_begin(void) {
+	void* class = SI_NS_CLASSES[CA_TRANSACTION_CODE];
+	void* func = SI_NS_FUNCTIONS[CA_TRANSACTION_BEGIN_CODE];
+
+	objc_msgSend_void(class, func);
+}
+
+void CATransaction_commit(void) {
+	void* class = SI_NS_CLASSES[CA_TRANSACTION_CODE];
+	void* func = SI_NS_FUNCTIONS[CA_TRANSACTION_COMMIT_CODE];
+
+	objc_msgSend_void(class, func);
+}
+
+void CATransaction_flush(void) {
+	void* class = SI_NS_CLASSES[CA_TRANSACTION_CODE];
+	void* func = SI_NS_FUNCTIONS[CA_TRANSACTION_FLUSH_CODE];
+
+	objc_msgSend_void(class, func);
+}
+bool CATransaction_disableActions(void) {
+	void* class = SI_NS_CLASSES[CA_TRANSACTION_CODE];
+	void* func = SI_NS_FUNCTIONS[CA_TRANSACTION_DISABLE_ACTIONS_CODE];
+
+	return objc_msgSend_bool(class, func);
+}
+
+void CATransaction_setDisableActions(bool flag) {
+	void* class = SI_NS_CLASSES[CA_TRANSACTION_CODE];
+	void* func = SI_NS_FUNCTIONS[CA_TRANSACTION_SET_DISABLE_ACTIONS_CODE];
+
+	objc_msgSend_void_bool(class, func, flag);
+}
+
 
 const char* NSURL_path(NSURL* url) {
 	void* func = SI_NS_FUNCTIONS[NSURL_PATH_CODE];

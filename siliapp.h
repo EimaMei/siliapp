@@ -429,7 +429,7 @@ typedef struct {
 #if defined(SIAPP_PLATFORM_API_X11)
 	XImage* bitmap;
 #elif defined(SIAPP_PLATFORM_API_COCOA)
-	rawptr bitmap;
+	b32 redraw;
 #endif
 	siArea size;
 	siArea maxSize;
@@ -710,7 +710,7 @@ void siapp_windowRender(siWindow* win);
 /* Clears the graphics of the screen. */
 void siapp_windowClear(const siWindow* win);
 /* Renders the graphics onto the screen and clears the current buffer. */
-void siapp_windowSwapBuffers(const siWindow* win);
+void siapp_windowSwapBuffers(siWindow* win);
 
 /* Closes the window. */
 void siapp_windowClose(siWindow* win);
@@ -1596,13 +1596,23 @@ void siapp__x11CheckStartup(void) {
 #elif defined(SIAPP_PLATFORM_API_COCOA)
 	NSApplication* NSApp = nil;
 
-b32 windowShouldClose(NSWindow* self, SEL sel, id notification) {
+b32 si__osxWindowClose(NSWindow* self) {
 	siWindow* win = nil;
 	object_getInstanceVariable(self, "siWindow", (void*)&win);
+	si_printf("wtf??\n", win);
 
 	win->e.type.isClosed = true;
 	return true;
 }
+NSSize windowDidResize(NSWindow* self, SEL sel, NSSize frameSize) {
+	siWindow* win = nil;
+	object_getInstanceVariable(self, "siWindow", (void*)&win);
+
+	siapp__resizeWindow(win, frameSize.width, frameSize.height);
+	return frameSize;
+}
+
+
 CVReturn displayCallback(CVDisplayLinkRef displayLink, const CVTimeStamp* inNow,
 		const CVTimeStamp* inOutputTime, CVOptionFlags flagsIn, CVOptionFlags* flagsOut,
 		void* displayLinkContext) {
@@ -1675,28 +1685,28 @@ static const char defaultVShaderCode[] = MULTILINE_STR(
 
 	out vec2 fragTex;
 	out vec4 fragClr;
-	//flat out uint fragTexID;
-	//uniform mat4 mvp[%u];
+	flat out uint fragTexID;
+	uniform mat4 mvp[%u];
 
 	void main() {
-		//fragTex = tex;
+		fragTex = tex;
 		fragClr = clr;
-		//fragTexID = info.x;
+		fragTexID = info.x;
 		gl_Position = vec4(pos, 1.0);//* mvp[info.y];
 	}
 );
 static const char FSHADER_4_0[] = MULTILINE_STR(
 	\x23version 400\n
 
-	//in vec2 fragTex;
+	in vec2 fragTex;
 	in vec4 fragClr;
-	//flat in uint fragTexID;
+	flat in uint fragTexID;
 	out vec4 finalColor;
 
 	uniform sampler2D textures[%u];
 
 	void main() {
-		finalColor = fragClr;/*texture(textures[fragTexID], fragTex) * fragClr */
+		finalColor = texture(textures[fragTexID], fragTex) * fragClr;
 	}
 );
 static const char FSHADER_3_1[] = MULTILINE_STR(
@@ -1912,7 +1922,7 @@ siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
 	win->__x11BlankCursor = 0;
 	win->__x11DndHead = (rawptr)USIZE_MAX;
 #elif defined(SIAPP_PLATFORM_API_COCOA)
-	si_func_to_SEL_with_name(SI_DEFAULT, "windowShouldClose", (void*)windowShouldClose);
+	si_func_to_SEL_with_name(SI_DEFAULT, "windowShouldClose", (void*)si__osxWindowClose);
 
 	NSWindow* hwnd = NSWindow_init(
 		NSMakeRect(pos.x, pos.y, size.width, size.height),
@@ -1931,9 +1941,12 @@ siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
 		"L"
 	);
 	SI_ASSERT(res);
+	res = class_addMethod(delegateClass, sel_registerName("windowWillResize:toSize:"), (IMP)windowDidResize, "{NSSize=ff}@:{NSSize=ff}");
+	SI_ASSERT(res);
 
 	id delegate = NSInit(NSAlloc(delegateClass));
 	object_setInstanceVariable(delegate, "siWindow", win);
+
 	NSWindow_setDelegate(hwnd, delegate);
 
 	win->hwnd = hwnd;
@@ -2368,10 +2381,30 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 	}
 	#undef SI_CHECK_WIN
 #else
-	NSEvent* event = NSApplication_nextEventMatchingMask(NSApp, NSEventMaskAny, NSDate_distantFuture(), NSDefaultRunLoopMode, true);
-	if (event != nil) {
+	if (!await) {
+		while (true) {
+			NSEvent* event = NSApplication_nextEventMatchingMask(
+				NSApp, NSEventMaskAny,
+				NSDate_distantPast(),
+				NSDefaultRunLoopMode, true
+			);
+			SI_STOPIF(event == nil, break);
+
+			NSApplication_sendEvent(NSApp, event);
+		}
+	}
+	else {
+		NSEvent* event = NSApplication_nextEventMatchingMask(
+			NSApp, NSEventMaskAny,
+			NSDate_distantFuture(),
+			NSDefaultRunLoopMode, true
+		);
+
 		NSApplication_sendEvent(NSApp, event);
-		NSApplication_updateWindows(NSApp);
+	}
+
+	if ((win->renderType & SI_RENDERING_BITS) == SI_RENDERING_CPU && win->render.cpu.redraw) {
+		siapp_windowClear(win);
 	}
 #endif
 
@@ -2404,18 +2437,28 @@ void siapp_windowClear(const siWindow* win) {
 			const siWinRenderingCtxCPU* cpu = &win->render.cpu;
 
 			u32 pixelCount = cpu->size.width * cpu->size.height;
+#if defined(SIAPP_PLATFORM_API_X11)
 			siColor* data = (siColor*)cpu->buffer;
 
 			for_range (i, 0, pixelCount) {
 				*data = cpu->bgColor;
 				data += 1;
 			}
+#else
+			siByte* data = cpu->buffer;
+
+			for_range (i, 0, pixelCount) {
+				memcpy(data, &cpu->bgColor, 3);
+				data += 3;
+			}
+
+#endif
 			break;
 		}
 	}
 }
 F_TRAITS(inline)
-void siapp_windowSwapBuffers(const siWindow* win) {
+void siapp_windowSwapBuffers(siWindow* win) {
 	SI_ASSERT_NOT_NULL(win);
 
 	switch (win->renderType & SI_RENDERING_BITS) {
@@ -2430,7 +2473,15 @@ void siapp_windowSwapBuffers(const siWindow* win) {
 		#endif
 			break;
 		}
+#if defined (SIAPP_PLATFORM_API_COCOA)
+		case SI_RENDERING_CPU: {
+			siWinRenderingCtxCPU* cpu = &win->render.cpu;
+			cpu->redraw = true;
+			return ;
+		}
+#endif
 	}
+
 	siapp_windowClear(win);
 }
 void siapp_windowClose(siWindow* win) {
@@ -3512,20 +3563,20 @@ siTextureAtlas siapp_textureAtlasMake(const siWindow* win, siArea area, u32 maxT
 
 	switch (atlas.renderID) {
 		case SI_RENDERING_OPENGL: {
-			//glGenTextures(1, &atlas.texID.opengl);
-			//u32 index = atlas.texID.opengl - 1;
+			glGenTextures(1, &atlas.texID.opengl);
+			u32 index = atlas.texID.opengl - 1;
 
-			//glActiveTexture(GL_TEXTURE0 + index);
-			//glBindTexture(GL_TEXTURE_2D, atlas.texID.opengl);
+			glActiveTexture(GL_TEXTURE0 + index);
+			glBindTexture(GL_TEXTURE_2D, atlas.texID.opengl);
 
-			//glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, atlas.totalWidth, atlas.texHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, nil);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, atlas.totalWidth, atlas.texHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, nil);
 
-			//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, enumName);
-			//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, enumName);
-			//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-			//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, enumName);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, enumName);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-			//glUniform1i(win->render.opengl.uniformTexture + index, index);
+			glUniform1i(win->render.opengl.uniformTexture + index, index);
 			break;
 		}
 		case SI_RENDERING_CPU: {
@@ -3608,7 +3659,7 @@ siImage siapp_imageLoadEx(siTextureAtlas* atlas, const siByte* buffer, u32 width
 	res.size = SI_AREA(width, height);
 	res.atlas = atlas;
 	res.id = atlas->curCount;
-#if 0
+
 	switch (atlas->renderID) {
 		case SI_RENDERING_OPENGL: {
 			u32 c = 0;
@@ -3670,7 +3721,6 @@ siImage siapp_imageLoadEx(siTextureAtlas* atlas, const siByte* buffer, u32 width
 			break;
 		}
 	}
-#endif
 	atlas->curWidth += width;
 	atlas->curCount += 1;
 
@@ -3770,6 +3820,7 @@ void siapp_spriteSheetSpriteSetEx(siSpriteSheet sheet, usize index, const siByte
 				GL_UNSIGNED_BYTE,
 				data
 			);
+			break;
 		}
 	}
 }
@@ -4306,7 +4357,11 @@ void siapp_drawRectF(siWindow* win, siVec4 rect, siColor color) {
 			alpha = 1.0f - alpha;
 
 			for_range (y, r.y, r.y + r.height) {
+#if defined(SIAPP_PLATFORM_API_X11)
 				usize index = y * (4 * cpu->size.width) + r.x * 4;
+#else
+				usize index = y * (3 * cpu->size.width) + r.x * 3;
+#endif
 				for_range (x, r.x, r.x + r.width) {
 					cpu->buffer[index + 0] *= alpha;
 					cpu->buffer[index + 1] *= alpha;
@@ -4316,13 +4371,13 @@ void siapp_drawRectF(siWindow* win, siVec4 rect, siColor color) {
 					cpu->buffer[index + 0] += color.b;
 					cpu->buffer[index + 1] += color.g;
 					cpu->buffer[index + 2] += color.r;
+					index += 4;
 #else
 					cpu->buffer[index + 0] += color.r;
 					cpu->buffer[index + 1] += color.g;
 					cpu->buffer[index + 2] += color.b;
+					index += 3;
 #endif
-
-					index += 4;
 				}
 			}
 			break;
@@ -5290,9 +5345,9 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(siOpenGLIndices) * maxDrawCount, indices, GL_STATIC_DRAW);
 	si_allocatorFree(indicesAlloc);
 
-	//gl->uniformTexture = glGetUniformLocation(gl->programID, "textures");
-	//gl->uniformMvp = glGetUniformLocation(gl->programID, "mvp");
-	//glUniformMatrix4fv(gl->uniformMvp, maxDrawCount, GL_FALSE, gl->matrices->m);
+	gl->uniformTexture = glGetUniformLocation(gl->programID, "textures");
+	gl->uniformMvp = glGetUniformLocation(gl->programID, "mvp");
+	glUniformMatrix4fv(gl->uniformMvp, maxDrawCount, GL_FALSE, gl->matrices->m);
 
 GL_init_section:
 	gl->vertexCounter = 0;
@@ -5341,7 +5396,7 @@ void siapp_windowOpenGLRender(siWindow* win) {
 		case SI_RENDERINGVER_OPENGL_4_4: {
 			glUseProgram(gl->programID);
 			glBindVertexArray(gl->VAO);
-			glUniformMatrix4fv(gl->uniformMvp, gl->drawCounter, GL_FALSE, gl->matrices->m);
+			//glUniformMatrix4fv(gl->uniformMvp, gl->drawCounter, GL_FALSE, gl->matrices->m);
 			break;
 		}
 	}
@@ -5416,7 +5471,6 @@ void siapp_OpenGLSamplesSet(u32 samples) { glInfo.sampleBuffers = samples; }
 void siapp_OpenGLStereoSet(b32 stereo) { glInfo.stereo = stereo & 1; }
 void siapp_OpenGLAuxBuffersSet(u32 auxBuffers) { glInfo.auxBuffers = auxBuffers; }
 
-/* */
 b32 siapp_windowCPUInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount, siArea maxTexRes) {
 	SI_ASSERT_NOT_NULL(win);
 	siWinRenderingCtxCPU* cpu = &win->render.cpu;
@@ -5431,19 +5485,12 @@ b32 siapp_windowCPUInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount, siArea
 		32, 0
 	);
 	SI_STOPIF(cpu->bitmap == nil, return false);
-#elif defined(SIAPP_PLATFORM_API_COCOA)
-	cpu->bitmap = NSBitmapImageRep_initWithBitmapData(
-		nil, cpu->size.width, cpu->size.height, 8, 4, true, false,
-		"NSDeviceRGBColorSpace", NSBitmapFormatAlphaNonpremultiplied,
-		cpu->size.width * 4, 32
-	);
-
-	NSView* view = NSWindow_contentView(win->hwnd);
-	NSView_setWantsLayer(view, true);
-#endif
-
 	cpu->buffer = (siByte*)calloc(cpu->maxSize.width * cpu->maxSize.height, 4);
-	SI_STOPIF(cpu->buffer == nil, return false);
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	cpu->buffer = calloc(cpu->size.width * cpu->size.height, 3);
+	cpu->redraw = false;
+#endif
+	SI_ASSERT_NOT_NULL(cpu->buffer);
 
 	return true;
 }
@@ -5456,16 +5503,19 @@ void siapp_windowCPURender(siWindow* win) {
 	cpu->bitmap->data = (char*)cpu->buffer;
 	XPutImage(win->display, win->hwnd, XDefaultGC(win->display, XDefaultScreen(win->display)), cpu->bitmap, 0, 0, 0, 0, cpu->size.width, cpu->size.height);
 #else
-	memcpy(NSBitmapImageRep_bitmapData(cpu->bitmap), cpu->buffer, cpu->size.width * cpu->size.height * 4);
-
-	NSImage* image = NSImage_initWithSize(NSMakeSize(cpu->size.width, cpu->size.height));
-	NSImage_addRepresentation(image, cpu->bitmap);
+	NSBitmapImageRep* rep = NSBitmapImageRep_initWithBitmapData(
+		&cpu->buffer, cpu->size.width, cpu->size.height, 8, 3, false, false,
+		"NSDeviceRGBColorSpace", 0,
+		cpu->size.width * 3, 24
+	);
+	id image = NSImage_initWithSize(NSMakeSize(cpu->size.width, cpu->size.height));
+	NSImage_addRepresentation(image, rep);
 
 	NSView* view = NSWindow_contentView(win->hwnd);
 	CALayer_setContents(NSView_layer(view), (id)image);
 
 	release(image);
-
+	release(rep);
 #endif
 }
 /* */
@@ -5474,10 +5524,6 @@ void siapp_windowCPUDestroy(siWindow* win) {
 	siWinRenderingCtxCPU* cpu = &win->render.cpu;
 	free(cpu->buffer);
 	siapp_textureAtlasFree(win->atlas);
-
-#if defined(SIAPP_PLATFORM_API_COCOA)
-	release(cpu->bitmap);
-#endif
 }
 
 
