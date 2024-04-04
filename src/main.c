@@ -21,7 +21,7 @@ int main(void) {
 	siWindow* win = siapp_windowMake(
 		alloc, "Example window | ĄČĘĖĮŠŲ | 「ケケア」",
 		SI_AREA(0, 0), SI_WINDOW_DEFAULT | SI_WINDOW_OPTIMAL_SIZE | SI_WINDOW_SCALING,
-		SI_RENDERING_CPU, 4, 2, SI_AREA(1200, 850)
+		SI_RENDERING_OPENGL, 4, 2, SI_AREA(1200, 850)
 	);
 	siapp_windowBackgroundSet(win, SI_RGB(128, 0, 0));
 	siapp_drawRect(win, SI_RECT(0, 0, 100, 250), SI_RGB(0, 0, 255));

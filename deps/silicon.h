@@ -28,13 +28,20 @@
 */
 
 #ifndef SILICON_H
+#define SILICON_H
+
 #include <ApplicationServices/ApplicationServices.h>
 #include <CoreVideo/CVDisplayLink.h>
 #include <objc/runtime.h>
 #include <objc/message.h>
 
-#define SICDEF
 #define SILICON_H
+#ifdef SICDEF_STATIC
+#define SICDEF static /* I have this so I can get warnings for functions that aren't defined */
+#else
+#define SICDEF static inline
+#endif
+
 
 #define NS_ENUM(type, name) type name; enum
 
@@ -153,6 +160,8 @@ typedef void NSSavePanel;
 typedef void NSOpenPanel;
 typedef void NSColorPanel;
 typedef void NSBundle;
+typedef void NSNotification;
+typedef void NSNotificationCenter;
 typedef void CALayer;
 #ifndef __OBJC__
 typedef void NSDictionary;
@@ -173,6 +182,7 @@ typedef unsigned long NSUInteger;
 typedef long NSInteger;
 typedef NSInteger NSModalResponse;
 
+typedef uint32_t NSOpenGLPixelFormatAttribute NS_OPENGL_DEPRECATED(10.0, 10.14);
 
 typedef NS_ENUM(NSUInteger, NSWindowStyleMask) {
 	NSWindowStyleMaskBorderless = 0,
@@ -266,7 +276,7 @@ typedef NS_ENUM(unsigned long long, NSEventMask) { /* masks for the types of eve
 #define NSEventMaskGesture API_AVAILABLE(macos(10.5))          (1ULL << NSEventTypeGesture)
 #define NSEventMaskMagnify API_AVAILABLE(macos(10.5))          (1ULL << NSEventTypeMagnify)
 #define NSEventMaskSwipe API_AVAILABLE(macos(10.5))            (1ULL << NSEventTypeSwipe)
-#define NSEventMaskRotate API_AVAILABLE(macos(10.5))           (1ULL << NSEventTypeRotate
+#define NSEventMaskRotate API_AVAILABLE(macos(10.5))           (1ULL << NSEventTypeRotate)
 #define NSEventMaskBeginGesture API_AVAILABLE(macos(10.5))     (1ULL << NSEventTypeBeginGesture)
 #define NSEventMaskEndGesture API_AVAILABLE(macos(10.5))       (1ULL << NSEventTypeEndGesture)
 
@@ -426,8 +436,8 @@ enum {
 	NSOpenGLPFAAllowOfflineRenderers NS_OPENGL_ENUM_DEPRECATED(10.5, 10.14)  =  96,  /* allow use of offline renderers               */
 	NSOpenGLPFAAcceleratedCompute    NS_OPENGL_ENUM_DEPRECATED(10.0, 10.14)  =  97,	/* choose a hardware accelerated compute device */
 
-	NSOpenGLProfileVersionLegacy 	 NS_OPENGL_ENUM_DEPRECATED(10.7, 10.14)  = 0x1000,
 	NSOpenGLPFAOpenGLProfile         NS_OPENGL_ENUM_DEPRECATED(10.7, 10.14)  =  99,    /* specify an OpenGL Profile to use             */
+	NSOpenGLProfileVersionLegacy     NS_OPENGL_ENUM_DEPRECATED(10.7, 10.14)  = 0x1000, /* The requested profile is a legacy (pre-OpenGL 3.0) profile. */
 	NSOpenGLProfileVersion3_2Core    NS_OPENGL_ENUM_DEPRECATED(10.0, 10.14)  = 0x3200, /* The 3.2 Profile of OpenGL */
 	NSOpenGLProfileVersion4_1Core    NS_OPENGL_ENUM_DEPRECATED(10.0, 10.14)  = 0x3200, /* The 4.1 profile of OpenGL */
 
@@ -585,7 +595,7 @@ SICDEF CGSize NSSizeToCGSize(NSSize nssize);
 SICDEF bool NSPointInRect(NSPoint aPoint, NSRect aRect);
 
 
-/* ============ NSColor class ============ */
+/* ============ NSColor ============ */
 /* ====== NSColor functions ====== */
 /* */
 SICDEF void NSColor_set(NSColor* color);
@@ -675,7 +685,7 @@ SICDEF const char* NSProcessInfo_processName(NSProcessInfo* processInfo);
 SICDEF bool NSThread_isMainThread(void);
 
 
-/* ============ NSApplication class ============ */
+/* ============ NSApplication ============ */
 /* ====== NSApplication properties ====== */
 /* */
 si_define_property(NSApplication, NSMenu*, mainMenu, MainMenu, application);
@@ -704,6 +714,8 @@ SICDEF void NSApplication_stop(NSApplication* application, void* view);
 SICDEF void NSApplication_terminate(NSApplication* application, id sender);
 /* */
 SICDEF void NSApplication_sendEvent(NSApplication* application, NSEvent* event);
+/* */
+SICDEF void NSApplication_postEvent(NSApplication* application, NSEvent* event, bool atStart);
 /* */
 SICDEF void NSApplication_updateWindows(NSApplication* application);
 /* */
@@ -834,7 +846,7 @@ si_define_property(NSTextField, NSFont*, font, Font, field);
 SICDEF NSTextField* NSTextField_initWithFrame(NSRect frameRect);
 
 
-/* ============ NSFontManager class ============ */
+/* ============ NSFontManager ============ */
 /* ====== NSFontManager functions ====== */
 /* */
 SICDEF NSFontManager* NSFontManager_sharedFontManager(void);
@@ -843,14 +855,14 @@ SICDEF NSFont* NSFontManager_convertFont(NSFontManager* manager, NSFont* fontObj
 /* */
 SICDEF NSFont* NSFontManager_convertFontToHaveTrait(NSFontManager* manager, NSFont* fontObj, NSFontTraitMask trait);
 
-/* ============ NSFont class ============ */
+/* ============ NSFont ============ */
 /* ====== NSFont functions ====== */
 /* */
 SICDEF NSFont* NSFont_init(const char* fontName, CGFloat fontSize);
 /* */
 SICDEF const char* NSFont_fontName(NSFont* font);
 
-/* ============ NSButton class ============ */
+/* ============ NSButton ============ */
 /* ====== NSButton properties ====== */
 /* */
 si_define_property(NSButton, const char*, title, Title, button);
@@ -874,7 +886,7 @@ SICDEF NSButton* NSButton_initWithFrame(NSRect frameRect);
 SICDEF void NSButton_setButtonType(NSButton* button, NSButtonType buttonType);
 
 
-/* ============ NSComboBox class ============ */
+/* ============ NSComboBox ============ */
 /* ====== NSComboBox properties ====== */
 /* (read-only) */
 SICDEF NSInteger NSComboBox_indexOfSelectedItem(NSComboBox* comboBox);
@@ -908,7 +920,7 @@ SICDEF void NSComboBox_addItem(NSComboBox* comboBox, const char* item);
 /* */
 SICDEF void NSComboBox_selectItem(NSComboBox* comboBox, NSInteger index);
 
-/* ============ NSEvent class ============ */
+/* ============ NSEvent ============ */
 /* ====== NSEvent functions ====== */
 /* */
 SICDEF NSEventType NSEvent_type(NSEvent* event);
@@ -929,7 +941,7 @@ SICDEF NSPoint NSEvent_mouseLocation(void);
 /* */
 SICDEF NSWindow* NSEvent_window(NSEvent* event);
 
-/* ============ NSDraggingInfo class ============ */
+/* ============ NSDraggingInfo ============ */
 /* ====== NSDraggingInfo properties ====== */
 /* */
 SICDEF NSPasteboard* NSDraggingInfo_draggingPasteboard(NSDraggingInfo* info);
@@ -940,7 +952,7 @@ si_define_property(NSDraggingInfo, NSInteger, numberOfValidItemsForDrop, NumberO
 /* */
 SICDEF NSWindow* NSDraggingInfo_draggingDestinationWindow(NSDraggingInfo* info);
 
-/* ============ NSSlider class ============ */
+/* ============ NSSlider ============ */
 /* ====== NSSlider properties ====== */
 /**/
 si_define_property(NSSlider, id, target, Target, slider);
@@ -957,7 +969,7 @@ si_define_property(NSSlider, double, maxValue, MaxValue, slider);
 /* */
 SICDEF NSSlider* NSSlider_initWithFrame(NSRect frameRect);
 
-/* ============ NSProgressIndicator class ============ */
+/* ============ NSProgressIndicator ============ */
 /* ====== NSProgressIndicator properties ====== */
 /* */
 si_define_property(NSProgressIndicator, double, doubleValue, DoubleValue, progressIndicator);
@@ -970,7 +982,7 @@ si_define_property(NSProgressIndicator, bool, isIndeterminate, Indeterminate, pr
 /* */
 SICDEF NSProgressIndicator* NSProgressIndicator_init(NSRect frameRect);
 
-/* ============ NSImage class ============ */
+/* ============ NSImage ============ */
 /* ====== NSImage functions ====== */
 /* Initializes and returns an image object with the specified dimensions. */
 SICDEF NSImage* NSImage_initWithSize(NSSize size);
@@ -987,7 +999,7 @@ SICDEF void NSImage_removeRepresentation(NSImage* image, NSImageRep* imageRep);
 /* Returns the application’s current cursor. */
 SICDEF NSCursor* NSCursor_currentCursor(void);
 
-/* ============ NSGraphicsContext class ============ */
+/* ============ NSGraphicsContext ============ */
 /* ====== NSGraphicsContext functions ====== */
 /* Creates a new graphics context for drawing into a window. */
 NSGraphicsContext* NSGraphicsContext_graphicsContextWithWindow(NSWindow* window);
@@ -1001,7 +1013,7 @@ void NSGraphicsContext_flushGraphics(NSGraphicsContext* context);
 si_define_property(NSGraphicsContext, NSGraphicsContext*, currentContext, CurrentContext, context);
 #endif
 
-/* ============ NSCursor class ============ */
+/* ============ NSCursor ============ */
 /* ====== NSCursor properties ====== */
 /* The cursor’s image. */
 SICDEF NSImage* NSCursor_image(NSCursor* cursor);
@@ -1022,7 +1034,7 @@ SICDEF void NSCursor_push(NSCursor* cursor);
 /* Makes the receiver the current cursor. */
 SICDEF void NSCursor_set(NSCursor* cursor);
 
-/* =========== NSPasteboard class ============ */
+/* =========== NSPasteboard ============ */
 /* ====== NSPasteboard functions ====== */
 /* */
 SICDEF NSPasteboard* NSPasteboard_generalPasteboard(void);
@@ -1035,7 +1047,7 @@ SICDEF bool NSPasteBoard_setString(NSPasteboard* pasteboard, const char* stringT
 /* */
 SICDEF siArray(const char*) NSPasteboard_readObjectsForClasses(NSPasteboard* pasteboard, siArray(Class) classArray, void* options);
 
-/* ============ NSMenu class ============ */
+/* ============ NSMenu ============ */
 /* ====== NSMenu functions ====== */
 /* */
 SICDEF NSMenu* NSMenu_init(const char* title);
@@ -1043,7 +1055,7 @@ SICDEF NSMenu* NSMenu_init(const char* title);
 SICDEF void NSMenu_addItem(NSMenu* menu, NSMenuItem* newItem);
 
 
-/* ============ NSMenuItem class ============ */
+/* ============ NSMenuItem ============ */
 /* ====== NSMenuItem properties ====== */
 /* */
 si_define_property(NSMenuItem, NSMenu*, submenu, Submenu, item);
@@ -1058,11 +1070,11 @@ SICDEF siArray(NSMenuItem*) NSMenu_itemArray(NSMenu* menu);
 /* */
 SICDEF NSMenuItem* NSMenuItem_separatorItem(void);
 
-/* ============ NSColorPanel class ============ */
+/* ============ NSColorPanel ============ */
 /* =====si_= NSColorPanel properties ====== */
 si_define_property(NSColorPanel, NSColor*, color, Color, colorPanel);
 
-/* ============ NSBitmapImageRep class ============ */
+/* ============ NSBitmapImageRep ============ */
 /* ====== NSBitmapImageRep properties ====== */
 SICDEF unsigned char* NSBitmapImageRep_bitmapData(NSBitmapImageRep* imageRep);
 
@@ -1070,7 +1082,7 @@ SICDEF unsigned char* NSBitmapImageRep_bitmapData(NSBitmapImageRep* imageRep);
 /* Initializes a newly allocated bitmap image representation so it can render the specified image. */
 SICDEF NSBitmapImageRep* NSBitmapImageRep_initWithBitmapData(unsigned char** planes, NSInteger width, NSInteger height, NSInteger bps, NSInteger spp, bool alpha, bool isPlanar, const char* colorSpaceName, NSBitmapFormat bitmapFormat, NSInteger rowBytes, NSInteger pixelBits);
 
-/* ============ NSSavePanel class ============ */
+/* ============ NSSavePanel ============ */
 /* ====== NSSavePanel properties ====== */
 /* A boolean value that indicates whether the panel displays UI for creating directories. */
 si_define_property(NSSavePanel, bool, canCreateDirectories, CanCreateDirectories, savePanel);
@@ -1088,7 +1100,7 @@ SICDEF NSURL* NSSavePanel_URL(NSSavePanel* savePanel);
 SICDEF NSModalResponse NSSavePanel_runModal(NSSavePanel* savePanel);
 
 
-/* ============ NSURL class ============ */
+/* ============ NSURL ============ */
 /* ====== NSURL properties ====== */
 SICDEF const char* NSURL_path(NSURL* url);
 
@@ -1097,7 +1109,7 @@ SICDEF const char* NSURL_path(NSURL* url);
 SICDEF NSURL* NSURL_fileURLWithPath(const char* path);
 
 
-/* ============ NSOpenPanel class ============ */
+/* ============ NSOpenPanel ============ */
 /* ====== NSOpenPanel properties ====== */
 /* A boolean that indicates whether the user can choose files in the panel. */
 si_define_property(NSOpenPanel, bool, canChooseFiles, CanChooseFiles, openPanel);
@@ -1134,14 +1146,14 @@ SICDEF NSOpenPanel* NSOpenPanel_openPanel(void);
 SICDEF NSModalResponse NSOpenPanel_runModal(NSOpenPanel* openPanel);
 
 
-/* ============ CALayer class ============ */
+/* ============ CALayer ============ */
 /* ====== CALayer properties ====== */
 /* An object that provides the contents of the layer. Animatable. */
 si_define_property(CALayer, id, contents, Contents, layer);
 /* A Boolean indicating whether the layer is displayed. Animatable. */
 si_define_property(CALayer, bool, isHidden, Hidden, layer);
 
-/* ============ CATransaction class ============ */
+/* ============ CATransaction ============ */
 /* ====== CATransaction functions ====== */
 /* Begin a new transaction for the current thread. */
 void CATransaction_begin(void);
@@ -1306,7 +1318,7 @@ abi_objc_msgSend_stret - Sends a message with a data-structure return value to a
 		f(obj, SI_NS_FUNCTIONS[func], d); \
 	}
 
-#define NSAlloc(nsclass) objc_msgSend_id((id)(nsclass), SI_NS_CLASSES[NS_ALLOC_CODE])
+#define NSAlloc(nsclass) objc_msgSend_id((id)(nsclass), SI_NS_FUNCTIONS[NS_ALLOC_CODE])
 
 const NSSize _NSZeroSize = {0, 0};
 
@@ -1361,7 +1373,6 @@ const unsigned char NSKEYCOUNT = sizeof(NSKEYS);
 enum { /* classes */
 	NS_APPLICATION_CODE = 0,
 	NS_WINDOW_CODE,
-	NS_ALLOC_CODE,
 	NS_VALUE_CODE,
 	NS_EVENT_CODE,
 	NS_DATE_CODE,
@@ -1396,6 +1407,7 @@ enum { /* classes */
 	NS_SLIDER_CODE,
 	NS_URL_CODE,
 	NS_BUNDLE_CODE,
+	NS_NOTIFICATIONCENTER_CODE,
 	CA_TRANSACTION_CODE,
 	NS_WINDOW_CONTROLLER_CODE,
 
@@ -1405,6 +1417,7 @@ enum { /* classes */
 enum{
 	/* functions */
 	NS_APPLICATION_SET_ACTIVATION_POLICY_CODE = 0,
+	NS_ALLOC_CODE,
 	NS_APPLICATION_SAPP_CODE,
 	NS_APPLICATION_RUN_CODE,
 	NS_APPLICATION_FL_CODE,
@@ -1433,6 +1446,7 @@ enum{
 	NS_APPLICATION_STOP_CODE,
 	NS_APPLICATION_TERMINATE_CODE,
 	NS_APPLICATION_SEND_EVENT_CODE,
+	NS_APPLICATION_POST_EVENT_CODE,
 	NS_APPLICATION_UPDATE_WINDOWS_CODE,
 	NS_APPLICATION_ACTIVATE_IGNORING_OTHER_APPS_CODE,
 	NS_APPLICATION_NEXT_EVENT_MATCHING_MASK_CODE,
@@ -1670,6 +1684,8 @@ enum{
 	NS_GRAPHICS_CONTEXT_WITH_WINDOW_CODE,
 	NS_GRAPHICS_CONTEXT_FLUSH_GRAPHICS_CODE,
 	NS_CURSOR_PERFORM_SELECTOR,
+	NS_NOTIFICATIONCENTER_ADD_OBSERVER,
+	NS_NOTIFICATIONCENTER_DEFAULT_CENTER,
 	NS_WINDOW_CONTROLLER_INIT_WITH_WINDOW_CODE,
 
 	NS_FUNC_LEN
@@ -1681,7 +1697,6 @@ void* SI_NS_FUNCTIONS[NS_FUNC_LEN];
 void si_initNS(void) {
 	SI_NS_CLASSES[NS_APPLICATION_CODE] = objc_getClass("NSApplication");
 	SI_NS_CLASSES[NS_WINDOW_CODE] = objc_getClass("NSWindow");
-	SI_NS_CLASSES[NS_ALLOC_CODE] = sel_registerName("alloc");
 	SI_NS_CLASSES[NS_VALUE_CODE] = objc_getClass("NSValue");
 	SI_NS_CLASSES[NS_EVENT_CODE] = objc_getClass("NSEvent");
 	SI_NS_CLASSES[NS_DATE_CODE] = objc_getClass("NSDate");
@@ -1716,10 +1731,12 @@ void si_initNS(void) {
 	SI_NS_CLASSES[NS_SLIDER_CODE] = objc_getClass("NSSlider");
 	SI_NS_CLASSES[NS_URL_CODE] = objc_getClass("NSURL");
 	SI_NS_CLASSES[NS_BUNDLE_CODE] = objc_getClass("NSBundle");
+	SI_NS_CLASSES[NS_NOTIFICATIONCENTER_CODE] = objc_getClass("NSNotificationCenter");
 	SI_NS_CLASSES[CA_TRANSACTION_CODE] = objc_getClass("CATransaction");
 	SI_NS_CLASSES[NS_WINDOW_CONTROLLER_CODE] = objc_getClass("NSWindowController");
 
 	SI_NS_FUNCTIONS[NS_APPLICATION_SET_ACTIVATION_POLICY_CODE] = sel_registerName("setActivationPolicy:");
+	SI_NS_FUNCTIONS[NS_ALLOC_CODE] = sel_registerName("alloc");
 	SI_NS_FUNCTIONS[NS_APPLICATION_SAPP_CODE] = sel_registerName("sharedApplication");
 	SI_NS_FUNCTIONS[NS_APPLICATION_RUN_CODE] = sel_registerName("run");
 	SI_NS_FUNCTIONS[NS_APPLICATION_FL_CODE] = sel_registerName("finishLaunching");
@@ -1990,6 +2007,8 @@ void si_initNS(void) {
 	SI_NS_FUNCTIONS[NS_GRAPHICS_CONTEXT_FLUSH_GRAPHICS_CODE] = sel_registerName("flushGraphics:");
 	SI_NS_FUNCTIONS[NS_CURSOR_PERFORM_SELECTOR] = sel_registerName("performSelector:");
 	SI_NS_FUNCTIONS[NS_WINDOW_CONTENT_VIEW_CONTROLLER_CODE] = sel_registerName("initWithWindow:");
+	SI_NS_FUNCTIONS[NS_NOTIFICATIONCENTER_ADD_OBSERVER] = sel_registerName("addObserver:selector:name:object:");
+	SI_NS_FUNCTIONS[NS_NOTIFICATIONCENTER_DEFAULT_CENTER] = sel_registerName("defaultCenter");
 }
 
 void si_impl_func_to_SEL_with_name(const char* class_name, const char* register_name, void* function) {
@@ -2152,10 +2171,10 @@ const char* NSProcessInfo_processName(NSProcessInfo* processInfo) {
 }
 
 bool NSThread_isMainThread(void) {
-	void* class = SI_NS_CLASSES[NS_THREAD_CODE];
+	void* nsclass = SI_NS_CLASSES[NS_THREAD_CODE];
 	void* func = SI_NS_FUNCTIONS[NS_THREAD_IS_MAIN_THREAD_CODE];
 
-	return objc_msgSend_bool(class, func);
+	return objc_msgSend_bool(nsclass, func);
 }
 
 NSApplication* NSApplication_sharedApplication(void) {
@@ -2238,6 +2257,12 @@ void NSApplication_sendEvent(NSApplication* application, NSEvent* event) {
 	objc_msgSend_void_id(application, func, event);
 }
 
+void NSApplication_postEvent(NSApplication* application, NSEvent* event, bool atStart) {
+	void* func = SI_NS_FUNCTIONS[NS_APPLICATION_POST_EVENT_CODE];
+	((void (*)(id, SEL, id, bool))objc_msgSend)
+		(application, func, event, atStart);
+}
+
 void NSApplication_updateWindows(NSApplication* application) {
 	void* func = SI_NS_FUNCTIONS[NS_APPLICATION_UPDATE_WINDOWS_CODE];
 	objc_msgSend_void(application, func);
@@ -2266,9 +2291,9 @@ si_declare_single(NSApplication, finishLaunching, NS_APPLICATION_FL_CODE)
 
 NSScreen* NSScreen_mainScreen(void) {
 	void* func = SI_NS_FUNCTIONS[NS_SCREEN_MAIN_SCREEN_CODE];
-	void* class = SI_NS_CLASSES[NS_SCREEN_CODE];
+	void* nsclass = SI_NS_CLASSES[NS_SCREEN_CODE];
 
-	return (NSScreen *)objc_msgSend_id(class, func);
+	return (NSScreen *)objc_msgSend_id(nsclass, func);
 }
 
 NSRect NSScreen_frame(NSScreen* screen) {
@@ -2283,10 +2308,10 @@ NSRect NSScreen_visibleFrame(NSScreen* screen) {
 }
 
 NSWindow* NSWindow_initWithContentViewController(NSViewController* contentViewController) {
-	void* class = SI_NS_CLASSES[NS_WINDOW_CODE];
+	void* nsclass = SI_NS_CLASSES[NS_WINDOW_CODE];
 	void* func = SI_NS_FUNCTIONS[NS_WINDOW_INIT_WITH_CONTENT_VIEW_CONTROLLER_CODE];
 
-	return (NSWindow*)objc_msgSend_id_id(NSAlloc(class), func, contentViewController);
+	return (NSWindow*)objc_msgSend_id_id(NSAlloc(nsclass), func, contentViewController);
 }
 
 NSWindow* NSWindow_init(NSRect contentRect, NSWindowStyleMask style, NSBackingStoreType backingStoreType, bool flag) {
@@ -2311,6 +2336,7 @@ void NSWindow_setTitle(NSWindow* window, const char* title) {
 
 void NSWindow_setMaxSize(NSWindow* window, NSSize size) {
 	void* func = SI_NS_FUNCTIONS[NS_WINDOW_SET_MAX_SIZE_CODE];
+
 
 	((void (*)(id, SEL, NSSize))objc_msgSend)(window, func, size);
 }
@@ -2662,10 +2688,10 @@ void NSView_setLayer(NSView* view, CALayer* layer) {
 }
 
 NSWindowController* NSWindowController_initWithWindow(NSWindow* window) {
-	void* class = SI_NS_CLASSES[NS_WINDOW_CONTROLLER_CODE];
+	void* nsclass = SI_NS_CLASSES[NS_WINDOW_CONTROLLER_CODE];
 	void* func = SI_NS_FUNCTIONS[NS_WINDOW_CONTROLLER_INIT_WITH_WINDOW_CODE];
 
-	return (NSWindowController*)objc_msgSend_id_id(NSAlloc(class), func, window);
+	return (NSWindowController*)objc_msgSend_id_id(NSAlloc(nsclass), func, window);
 }
 
 NSViewController* NSWindowController_contentViewController(NSWindowController* windowController) {
@@ -3422,37 +3448,37 @@ void CALayer_setNeedsDisplay(CALayer* layer) {
 }
 
 void CATransaction_begin(void) {
-	void* class = SI_NS_CLASSES[CA_TRANSACTION_CODE];
+	void* nsclass = SI_NS_CLASSES[CA_TRANSACTION_CODE];
 	void* func = SI_NS_FUNCTIONS[CA_TRANSACTION_BEGIN_CODE];
 
-	objc_msgSend_void(class, func);
+	objc_msgSend_void(nsclass, func);
 }
 
 void CATransaction_commit(void) {
-	void* class = SI_NS_CLASSES[CA_TRANSACTION_CODE];
+	void* nsclass = SI_NS_CLASSES[CA_TRANSACTION_CODE];
 	void* func = SI_NS_FUNCTIONS[CA_TRANSACTION_COMMIT_CODE];
 
-	objc_msgSend_void(class, func);
+	objc_msgSend_void(nsclass, func);
 }
 
 void CATransaction_flush(void) {
-	void* class = SI_NS_CLASSES[CA_TRANSACTION_CODE];
+	void* nsclass = SI_NS_CLASSES[CA_TRANSACTION_CODE];
 	void* func = SI_NS_FUNCTIONS[CA_TRANSACTION_FLUSH_CODE];
 
-	objc_msgSend_void(class, func);
+	objc_msgSend_void(nsclass, func);
 }
 bool CATransaction_disableActions(void) {
-	void* class = SI_NS_CLASSES[CA_TRANSACTION_CODE];
+	void* nsclass = SI_NS_CLASSES[CA_TRANSACTION_CODE];
 	void* func = SI_NS_FUNCTIONS[CA_TRANSACTION_DISABLE_ACTIONS_CODE];
 
-	return objc_msgSend_bool(class, func);
+	return objc_msgSend_bool(nsclass, func);
 }
 
 void CATransaction_setDisableActions(bool flag) {
-	void* class = SI_NS_CLASSES[CA_TRANSACTION_CODE];
+	void* nsclass = SI_NS_CLASSES[CA_TRANSACTION_CODE];
 	void* func = SI_NS_FUNCTIONS[CA_TRANSACTION_SET_DISABLE_ACTIONS_CODE];
 
-	objc_msgSend_void_bool(class, func, flag);
+	objc_msgSend_void_bool(nsclass, func, flag);
 }
 
 
@@ -3514,6 +3540,24 @@ NSBundle* NSBundle_mainBundle(void) {
 	void* nsclass = SI_NS_CLASSES[NS_BUNDLE_CODE];
 
 	return objc_msgSend_id(nsclass, func);
+}
+
+NSNotificationCenter* NSNotificationCenter_defaultCenter(void) {
+	void* func =  SI_NS_FUNCTIONS[NS_NOTIFICATIONCENTER_DEFAULT_CENTER];
+	void* nsclass = SI_NS_CLASSES[NS_NOTIFICATIONCENTER_CODE];
+
+	return objc_msgSend_id(nsclass, func);
+}
+
+void NSNotificationCenter_addObserver(NSNotificationCenter* center, id observer, SEL aSelector, char* aName, id anObject) {
+	void* func = SI_NS_FUNCTIONS[NS_NOTIFICATIONCENTER_ADD_OBSERVER];
+
+	NSString* str = NSString_stringWithUTF8String(aName);
+
+	((void (*)(id, SEL, id, SEL, NSString*, id))objc_msgSend)
+			(center, func, observer, aSelector, aName, anObject);
+
+	NSRelease(str);
 }
 
 NSArray* si_array_to_NSArray(siArray(void) array) {
