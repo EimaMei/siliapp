@@ -67,14 +67,8 @@
 	SICDEF type class##_##name(class* arg_name);			\
 	SICDEF void class##_set##set_name(class* arg_name, type name)
 
-/* Useful Objective-C class macros. */
-/* In cases where you need the actual Objective-C class type as a regular function argument. */
-#define _MAC_CAT0(a, b) a##b
-#define _MAC_CAT(a, b) _MAC_CAT0(a, b)
-#define _(callable) _MAC_CAT(__, callable)()
-#define objctype _
 /* Gets the size of the class. */
-#define sizeof_class(typename) class_getInstanceSize(class(typename))
+#define sizeof_class(typename) class_getInstanceSize(objc_getClass(#typename))
 
 #define NSUIntegerMax ULONG_MAX
 
@@ -171,8 +165,6 @@ typedef void NSDate;
 typedef void NSString;
 typedef void NSArray;
 typedef void NSThread;
-#else
-
 #endif
 
 typedef NSView NSOpenGLView;
@@ -182,7 +174,6 @@ typedef unsigned long NSUInteger;
 typedef long NSInteger;
 typedef NSInteger NSModalResponse;
 
-typedef uint32_t NSOpenGLPixelFormatAttribute NS_OPENGL_DEPRECATED(10.0, 10.14);
 
 typedef NS_ENUM(NSUInteger, NSWindowStyleMask) {
 	NSWindowStyleMaskBorderless = 0,
@@ -383,6 +374,44 @@ typedef NS_ENUM(NSUInteger, NSAutoresizingMaskOptions) {
 	NSViewMaxYMargin			= 32
 };
 
+typedef NS_ENUM(NSUInteger, NSBorderType) {
+    NSNoBorder				= 0,
+    NSLineBorder			= 1,
+    NSBezelBorder			= 2,
+    NSGrooveBorder			= 3
+};
+
+typedef NS_ENUM(NSInteger, NSViewLayerContentsRedrawPolicy) {
+    // Leave the layer's contents alone. Never mark the layer as needing display, or draw the view's contents to the layer
+    NSViewLayerContentsRedrawNever = 0,
+    // Map view -setNeedsDisplay...: activity to the layer, and redraw affected layer parts by invoking the view's -drawRect:, but don't mark the view or layer as needing display when the view's size changes.
+    NSViewLayerContentsRedrawOnSetNeedsDisplay = 1,
+    // Resize the layer and redraw the view to the layer when the view's size changes. If the resize is animated, AppKit will drive the resize animation itself and will do this resize+redraw at each step of the animation. Affected parts of the layer will also be redrawn when the view is marked as needing display. (This mode is a superset of NSViewLayerContentsRedrawOnSetNeedsDisplay.)
+    NSViewLayerContentsRedrawDuringViewResize = 2,
+    // Resize the layer and redraw the view to the layer when the view's size changes. This will be done just once at the beginning of a resize animation, not at each frame of the animation. Affected parts of the layer will also be redrawn when the view is marked as needing display. (This mode is a superset of NSViewLayerContentsRedrawOnSetNeedsDisplay.)
+    NSViewLayerContentsRedrawBeforeViewResize = 3,
+    // When a view is resized, the layer contents will be redrawn once and the contents will crossfade from the old value to the new value. Use this in conjunction with the layerContentsPlacement to get a nice crossfade animation for complex layer-backed views that can't correctly update on each step of the animation
+    NSViewLayerContentsRedrawCrossfade API_AVAILABLE(macos(10.9)) = 4
+} API_AVAILABLE(macos(10.6));
+
+typedef NS_ENUM(NSInteger, NSViewLayerContentsPlacement) {
+    NSViewLayerContentsPlacementScaleAxesIndependently      =  0,
+    NSViewLayerContentsPlacementScaleProportionallyToFit    =  1,
+    NSViewLayerContentsPlacementScaleProportionallyToFill   =  2,
+    NSViewLayerContentsPlacementCenter                      =  3,
+    NSViewLayerContentsPlacementTop                         =  4,
+    NSViewLayerContentsPlacementTopRight                    =  5,
+    NSViewLayerContentsPlacementRight                       =  6,
+    NSViewLayerContentsPlacementBottomRight                 =  7,
+    NSViewLayerContentsPlacementBottom                      =  8,
+    NSViewLayerContentsPlacementBottomLeft                  =  9,
+    NSViewLayerContentsPlacementLeft                        = 10,
+    NSViewLayerContentsPlacementTopLeft                     = 11
+} API_AVAILABLE(macos(10.6));
+
+typedef NSInteger NSTrackingRectTag;
+typedef NSInteger NSToolTipTag;
+
 typedef NS_ENUM(NSUInteger, NSBezelStyle) {
 	NSBezelStyleRounded           = 1,
 	NSBezelStyleRegularSquare     = 2,
@@ -547,7 +576,7 @@ enum {
 SICDEF void si_initNS(void);
 
 /* release objects */
-SICDEF id NSAutoRelease(id object);
+SICDEF id NSAutorelease(id object);
 SICDEF id NSInit(void* class);
 SICDEF void NSRelease(id object);
 SICDEF void NSRetain(id object);
@@ -762,9 +791,9 @@ SICDEF NSWindow* NSWindow_initWithContentViewController(NSViewController* conten
 /* Initializes the window with the specified values. */
 SICDEF NSWindow* NSWindow_init(NSRect contentRect, NSWindowStyleMask style, NSBackingStoreType backingStoreType, bool flag);
 /* */
-SICDEF void NSWindow_orderFront(NSWindow* window, NSWindow* sender);
+SICDEF void NSWindow_orderFront(NSWindow* window, id sender);
 /* */
-SICDEF void NSWindow_makeKeyAndOrderFront(NSWindow* window, SEL s);
+SICDEF void NSWindow_makeKeyAndOrderFront(NSWindow* window, id sender);
 /* */
 SICDEF void NSWindow_makeKeyWindow(NSWindow* window);
 /* */
@@ -811,6 +840,9 @@ SICDEF void NSView_registerForDraggedTypes(NSView* view, siArray(NSPasteboardTyp
 si_define_property(NSView, CALayer*, layer, Layer, view);
 /* A Boolean value indicating whether the view uses a layer as its backing store. */
 si_define_property(NSView, bool, wantslayer, WantsLayer, view);
+/* The current layer contents placement policy. */
+si_define_property(NSView, NSViewLayerContentsPlacement, layerContentsPlacement, LayerContentsPlacement, view);
+
 /* (nullable, readonly, unsafe_unretained) The view’s window object, if it is installed in a window. */
 NSWindow* NSView_window(NSView* view);
 
@@ -999,6 +1031,7 @@ SICDEF void NSImage_removeRepresentation(NSImage* image, NSImageRep* imageRep);
 /* Returns the application’s current cursor. */
 SICDEF NSCursor* NSCursor_currentCursor(void);
 
+
 /* ============ NSGraphicsContext ============ */
 /* ====== NSGraphicsContext functions ====== */
 /* Creates a new graphics context for drawing into a window. */
@@ -1007,11 +1040,9 @@ NSGraphicsContext* NSGraphicsContext_graphicsContextWithWindow(NSWindow* window)
 void NSGraphicsContext_flushGraphics(NSGraphicsContext* context);
 
 /* ====== NSGraphicsContext properties ====== */
-/* */
-#if (OS_X_VERSION_MAX_ALLOWED < macos_version(10, 5)) /* 'currentContext' doesn't exist in OS X 10.5+. */
-/* */
+/* Returns the current graphics context of the current thread. */
 si_define_property(NSGraphicsContext, NSGraphicsContext*, currentContext, CurrentContext, context);
-#endif
+
 
 /* ============ NSCursor ============ */
 /* ====== NSCursor properties ====== */
@@ -1156,17 +1187,17 @@ si_define_property(CALayer, bool, isHidden, Hidden, layer);
 /* ============ CATransaction ============ */
 /* ====== CATransaction functions ====== */
 /* Begin a new transaction for the current thread. */
-void CATransaction_begin(void);
+SICDEF void CATransaction_begin(void);
 /* Commit all changes made during the current transaction. */
-void CATransaction_commit(void);
+SICDEF void CATransaction_commit(void);
 /* Commit all changes made during the current transaction. */
-void CATransaction_flush(void);
+SICDEF void CATransaction_flush(void);
 /* Returns whether actions triggered as a result of property changes made within
  * this transaction group are suppressed. */
-bool CATransaction_disableActions(void);
+SICDEF bool CATransaction_disableActions(void);
 /* Sets whether actions triggered as a result of property changes made within this
  * transaction group are suppressed. */
-void CATransaction_setDisableActions(bool flag);
+SICDEF void CATransaction_setDisableActions(bool flag);
 
 /* ============ OpenGL ============ */
 /* TODO(EimaMei): Add documentation & deprecations macros for the OpenGL functions. */
@@ -1301,21 +1332,16 @@ siArray(const char*) _NSSearchPathForDirectoriesInDomains(NSSearchPathDirectory 
 #define objc_msgSend_id_char_const	((id (*)(id, SEL, char const *))objc_msgSend)
 
 /*
-abi_objc_msgSend_stret - Sends a message with a floating-point return value to an instance of a class.
+abi_objc_msgSend_ftret - Sends a message with a floating-point return value to an instance of a class.
 abi_objc_msgSend_stret - Sends a message with a data-structure return value to an instance of a class.
 */
 
-/* Defining common properties/methods macros. */
-/* Defines the `get` and `set` versions of the provided property. */
-
-#define si_declare_single(class, name, func)	\
-	void class##_##name(class* obj) { \
-		objc_msgSend_void(obj, SI_NS_FUNCTIONS[func]); \
-	}
-
-#define si_declare_double(class, name, func, arg_type, f) \
-	void class##_##name(class* obj, arg_type d) { \
-		f(obj, SI_NS_FUNCTIONS[func], d); \
+#define si_implement_property(class, type, name, set_name, arg_name)	\
+	type class##_##name(class* arg_name) { \
+		return ((type(*)(id, SEL))objc_msgSend)((id)arg_name, sel_registerName(#name)); \
+	} \
+	void class##_set##set_name(class* arg_name, type name) { \
+		((void(*)(id, SEL, type))objc_msgSend)((id)arg_name, sel_registerName("set"#set_name":"), name); \
 	}
 
 #define NSAlloc(nsclass) objc_msgSend_id((id)(nsclass), SI_NS_FUNCTIONS[NS_ALLOC_CODE])
@@ -1419,13 +1445,10 @@ enum{
 	NS_APPLICATION_SET_ACTIVATION_POLICY_CODE = 0,
 	NS_ALLOC_CODE,
 	NS_APPLICATION_SAPP_CODE,
-	NS_APPLICATION_RUN_CODE,
-	NS_APPLICATION_FL_CODE,
 	NS_WINDOW_INITR_CODE,
 	NS_VALUE_RECT_CODE,
 	NS_RELEASE_CODE,
 	NS_WINDOW_MAKEOF_CODE,
-	NS_OPENGL_FB_CODE,
 	NS_COLOR_CLEAR_CODE,
 	NS_COLOR_KEYBOARD_FOCUS_INDICATOR_CODE,
 	NS_COLOR_SET_CODE,
@@ -1456,7 +1479,6 @@ enum{
 	NS_WINDOW_SET_TITLE_CODE,
 	NS_WINDOW_CONTENT_VIEW_CODE,
 	NS_WINDOW_SET_CONTENT_VIEW_CODE,
-	NS_OPENGL_CONTEXT_FLUSH_BUFFER_CODE,
 	NS_WINDOW_DELEGATE_CODE,
 	NS_WINDOW_SET_DELEGATE_CODE,
 	NS_WINDOW_CONTENT_VIEW_CONTROLLER_CODE,
@@ -1471,7 +1493,6 @@ enum{
 	NS_WINDOW_SET_ALPHA_VALUE_CODE,
 	NS_WINDOW_ACCEPTS_MOUSE_MOVED_EVENTS_CODE,
 	NS_WINDOW_SET_ACCEPTS_MOUSE_MOVED_EVENTS_CODE,
-	NS_GRAPHICS_CONTEXT_CURRENT_CONTEXT_CODE,
 	NS_MENU_ITEM_SET_SUBMENU_CODE,
 	NS_MENU_ITEM_TITLE_CODE,
 	NS_FRAME_CODE,
@@ -1479,7 +1500,6 @@ enum{
 	NS_WINDOW_INIT_WITH_CONTENT_VIEW_CONTROLLER_CODE,
 	NS_WINDOW_ORDER_FRONT_CODE,
 	NS_WINDOW_MAKE_KEY_AND_ORDER_FRONT_CODE,
-	NS_WINDOW_MAKE_KEY_WINDOW_CODE,
 	NS_WINDOW_IS_KEY_WINDOW_CODE,
 	NS_WINDOW_CENTER_CODE,
 	NS_WINDOW_MAKE_MAIN_WINDOW_CODE,
@@ -1512,7 +1532,6 @@ enum{
 	NS_IMAGE_ADD_REPRESENTATION_CODE,
 	NS_IMAGE_REMOVE_REPRESENTATION_CODE,
 	NS_CURSOR_CURRENT_CURSOR_CODE,
-	NS_GRAPHICS_CONTEXT_SET_CURRENT_CONTEXT_CODE,
 	NS_CURSOR_IMAGE_CODE,
 	NS_CURSOR_HOT_SPOT_CODE,
 	NS_CURSOR_ARROW_CURSOR_CODE,
@@ -1738,14 +1757,11 @@ void si_initNS(void) {
 	SI_NS_FUNCTIONS[NS_APPLICATION_SET_ACTIVATION_POLICY_CODE] = sel_registerName("setActivationPolicy:");
 	SI_NS_FUNCTIONS[NS_ALLOC_CODE] = sel_registerName("alloc");
 	SI_NS_FUNCTIONS[NS_APPLICATION_SAPP_CODE] = sel_registerName("sharedApplication");
-	SI_NS_FUNCTIONS[NS_APPLICATION_RUN_CODE] = sel_registerName("run");
-	SI_NS_FUNCTIONS[NS_APPLICATION_FL_CODE] = sel_registerName("finishLaunching");
 	SI_NS_FUNCTIONS[NS_WINDOW_INITR_CODE] = sel_registerName("initWithContentRect:styleMask:backing:defer:");
 	SI_NS_FUNCTIONS[NS_WINDOW_CONTROLLER_INIT_WITH_WINDOW_CODE] = sel_registerName("initWithWindow:");
 	SI_NS_FUNCTIONS[NS_WINDOW_MAKEOF_CODE] = sel_registerName("orderFront:");
 	SI_NS_FUNCTIONS[NS_VALUE_RECT_CODE] = sel_registerName("valueWithRect:");
 	SI_NS_FUNCTIONS[NS_RELEASE_CODE] = sel_registerName("release");
-	SI_NS_FUNCTIONS[NS_OPENGL_FB_CODE] = sel_registerName("flushBuffer");
 	SI_NS_FUNCTIONS[NS_COLOR_CLEAR_CODE] = sel_registerName("clearColor");
 	SI_NS_FUNCTIONS[NS_COLOR_KEYBOARD_FOCUS_INDICATOR_CODE] = sel_registerName("keyboardFocusIndicatorColor");
 	SI_NS_FUNCTIONS[NS_COLOR_SET_CODE] = sel_registerName("set:");
@@ -1777,14 +1793,12 @@ void si_initNS(void) {
 	SI_NS_FUNCTIONS[NS_WINDOW_SET_ALPHA_VALUE_CODE] = sel_registerName("setAlphaValue:");
 	SI_NS_FUNCTIONS[NS_WINDOW_ACCEPTS_MOUSE_MOVED_EVENTS_CODE] = sel_registerName("acceptsMouseMovedEvents");
 	SI_NS_FUNCTIONS[NS_WINDOW_SET_ACCEPTS_MOUSE_MOVED_EVENTS_CODE] = sel_registerName("setAcceptsMouseMovedEvents:");
-	SI_NS_FUNCTIONS[NS_GRAPHICS_CONTEXT_CURRENT_CONTEXT_CODE] = sel_registerName("currentContext");
 	SI_NS_FUNCTIONS[NS_MENU_ITEM_SET_SUBMENU_CODE] = sel_registerName("setSubmenu:");
 	SI_NS_FUNCTIONS[NS_MENU_ITEM_TITLE_CODE] = sel_registerName("title");
 	SI_NS_FUNCTIONS[NS_WINDOW_INIT_CODE] = sel_registerName("initWithContentRect:styleMask:backing:defer:");
 	SI_NS_FUNCTIONS[NS_WINDOW_INIT_WITH_CONTENT_VIEW_CONTROLLER_CODE] = sel_registerName("windowWithContentViewController:");
 	SI_NS_FUNCTIONS[NS_WINDOW_ORDER_FRONT_CODE] = sel_registerName("orderFront:");
 	SI_NS_FUNCTIONS[NS_WINDOW_MAKE_KEY_AND_ORDER_FRONT_CODE] = sel_registerName("makeKeyAndOrderFront:");
-	SI_NS_FUNCTIONS[NS_WINDOW_MAKE_KEY_WINDOW_CODE] = sel_registerName("makeKeyWindow");
 	SI_NS_FUNCTIONS[NS_WINDOW_IS_KEY_WINDOW_CODE] = sel_registerName("isKeyWindow");
 	SI_NS_FUNCTIONS[NS_WINDOW_CENTER_CODE] = sel_registerName("center");
 	SI_NS_FUNCTIONS[NS_WINDOW_MAKE_MAIN_WINDOW_CODE] = sel_registerName("makeMainWindow");
@@ -1817,7 +1831,6 @@ void si_initNS(void) {
 	SI_NS_FUNCTIONS[NS_IMAGE_ADD_REPRESENTATION_CODE] = sel_registerName("addRepresentation:");
 	SI_NS_FUNCTIONS[NS_IMAGE_REMOVE_REPRESENTATION_CODE] = sel_registerName("removeRepresentation:");
 	SI_NS_FUNCTIONS[NS_CURSOR_CURRENT_CURSOR_CODE] = sel_registerName("currentCursor");
-	SI_NS_FUNCTIONS[NS_GRAPHICS_CONTEXT_SET_CURRENT_CONTEXT_CODE] = sel_registerName("setCurrentContext:");
 	SI_NS_FUNCTIONS[NS_CURSOR_IMAGE_CODE] = sel_registerName("image");
 	SI_NS_FUNCTIONS[NS_CURSOR_HOT_SPOT_CODE] = sel_registerName("hotSpot");
 	SI_NS_FUNCTIONS[NS_CURSOR_ARROW_CURSOR_CODE] = sel_registerName("arrowCursor");
@@ -1866,7 +1879,6 @@ void si_initNS(void) {
 	SI_NS_FUNCTIONS[NS_APPLICATION_NEXT_EVENT_MATCHING_MASK_CODE] = sel_registerName("nextEventMatchingMask:untilDate:inMode:dequeue:");
 	SI_NS_FUNCTIONS[NS_APPLICATION_SEND_EVENT_CODE] = sel_registerName("sendEvent:");
 	SI_NS_FUNCTIONS[NS_APPLICATION_UPDATE_WINDOWS_CODE] = sel_registerName("updateWindows");
-	SI_NS_FUNCTIONS[NS_OPENGL_CONTEXT_FLUSH_BUFFER_CODE] = sel_registerName("flushBuffer");
 	SI_NS_FUNCTIONS[NS_APPLICATION_TERMINATE_CODE] = sel_registerName("terminate:");
 	SI_NS_FUNCTIONS[NS_STROKE_LINE_CODE] = sel_registerName("strokeLine:");
 	SI_NS_FUNCTIONS[NS_AUTO_RELEASE_POOL_INIT_CODE] = sel_registerName("init");
@@ -1925,8 +1937,6 @@ void si_initNS(void) {
 	SI_NS_FUNCTIONS[NS_PROGRESS_INDICATOR_SET_INDETERMINATE_CODE] = sel_registerName("setIndeterminate:");
 	SI_NS_FUNCTIONS[NS_PROGRESS_INDICATOR_INDETERMINATE_CODE] = sel_registerName("isIndeterminate");
 	SI_NS_FUNCTIONS[NS_PROGRESS_INDICATOR_INIT_CODE] = sel_registerName("initWithFrame:");
-	SI_NS_FUNCTIONS[NS_GRAPHICS_CONTEXT_CURRENT_CONTEXT_CODE] = sel_registerName("currentContext");
-	SI_NS_FUNCTIONS[NS_GRAPHICS_CONTEXT_SET_CURRENT_CONTEXT_CODE] = sel_registerName("setCurrentContext:");
 	SI_NS_FUNCTIONS[NS_MENU_ITEM_SET_TITLE_CODE] = sel_registerName("setTitle:");
 	SI_NS_FUNCTIONS[NS_FONT_INIT_CODE] = sel_registerName("fontWithName:size:");
 	SI_NS_FUNCTIONS[NS_FONT_FONT_NAME_CODE] = sel_registerName("fontName");
@@ -2286,14 +2296,19 @@ void NSApplication_setActivationPolicy(NSApplication* obj, NSApplicationActivati
 	objc_msgSend_void_uint(obj, SI_NS_FUNCTIONS[NS_APPLICATION_SET_ACTIVATION_POLICY_CODE], d); \
 }
 
-si_declare_single(NSApplication, run, NS_APPLICATION_RUN_CODE)
-si_declare_single(NSApplication, finishLaunching, NS_APPLICATION_FL_CODE)
+void NSApplication_run(NSApplication* application) {
+	objc_msgSend_void(application, sel_registerName("run"));
+}
+
+void NSApplication_finishLaunching(NSApplication* application) {
+	objc_msgSend_void(application, sel_registerName("finishLaunching"));
+}
 
 NSScreen* NSScreen_mainScreen(void) {
 	void* func = SI_NS_FUNCTIONS[NS_SCREEN_MAIN_SCREEN_CODE];
 	void* nsclass = SI_NS_CLASSES[NS_SCREEN_CODE];
 
-	return (NSScreen *)objc_msgSend_id(nsclass, func);
+	return (NSScreen*)objc_msgSend_id(nsclass, func);
 }
 
 NSRect NSScreen_frame(NSScreen* screen) {
@@ -2304,7 +2319,7 @@ NSRect NSScreen_frame(NSScreen* screen) {
 NSRect NSScreen_visibleFrame(NSScreen* screen) {
 	void* func = SI_NS_FUNCTIONS[NS_SCREEN_VISIBLE_FRAME_CODE];
 
-	return ((NSRect (*)(id, SEL))objc_msgSend) (screen, func);
+	return ((NSRect (*)(id, SEL))abi_objc_msgSend_stret)(screen, func);
 }
 
 NSWindow* NSWindow_initWithContentViewController(NSViewController* contentViewController) {
@@ -2440,13 +2455,17 @@ void NSWindow_setAcceptsMouseMovedEvents(NSWindow* window, bool acceptsMouseMove
 	objc_msgSend_void_bool(window, func, acceptsMouseMovedEvents);
 }
 
-si_declare_single(NSWindow, makeKeyWindow, NS_WINDOW_MAKE_KEY_WINDOW_CODE)
+void NSWindow_makeKeyWindow(NSWindow* window) {
+	objc_msgSend_void(window, sel_registerName("makeKeyWindow"));
+}
 
-si_declare_double(NSWindow, orderFront, NS_WINDOW_MAKEOF_CODE, NSWindow*, objc_msgSend_void_id)
+void NSWindow_orderFront(NSWindow* window, id sender) {
+	objc_msgSend_void_id(window, sel_registerName("orderFront:"), sender);
+}
 
-void NSWindow_makeKeyAndOrderFront(NSWindow* obj, SEL d) {
+void NSWindow_makeKeyAndOrderFront(NSWindow* obj, id sender) {
 	void* func = SI_NS_FUNCTIONS[NS_WINDOW_MAKE_KEY_AND_ORDER_FRONT_CODE];
-	((id (*)(id, SEL, SEL))objc_msgSend)(obj, func, d);
+	((id (*)(id, SEL, id))objc_msgSend)(obj, func, sender);
 }
 
 NSInteger NSDraggingInfo_numberOfValidItemsForDrop(NSDraggingInfo* info) {
@@ -2545,15 +2564,7 @@ NSProgressIndicator* NSProgressIndicator_init(NSRect frameRect) {
 				objc_msgSend)(NSAlloc(SI_NS_CLASSES[NS_PROGRESS_INDICATOR_CODE]), func, frameRect);
 }
 
-NSGraphicsContext* NSGraphicsContext_currentContext(NSGraphicsContext* context) {
-	void* func = SI_NS_FUNCTIONS[NS_GRAPHICS_CONTEXT_CURRENT_CONTEXT_CODE];
-	return objc_msgSend_id(SI_NS_CLASSES[NS_GRAPHICS_CONTEXT_CODE], func);
-}
-
-void NSGraphicsContext_setCurrentContext(NSGraphicsContext* context, NSGraphicsContext* currentContext) {
-	void* func = SI_NS_FUNCTIONS[NS_GRAPHICS_CONTEXT_SET_CURRENT_CONTEXT_CODE];
-	objc_msgSend_void_id(context, func, currentContext);
-}
+si_implement_property(NSGraphicsContext, NSGraphicsContext*, currentContext, CurrentContext, context)
 
 NSGraphicsContext* NSGraphicsContext_graphicsContextWithWindow(NSWindow* window) {
 	void* func = SI_NS_FUNCTIONS[NS_GRAPHICS_CONTEXT_WITH_WINDOW_CODE];
@@ -2579,7 +2590,7 @@ void NSMenuItem_setTitle(NSMenuItem* item, const char* title) {
 NSRect NSWindow_frame(NSWindow* window) {
 	void* func = SI_NS_FUNCTIONS[NS_FRAME_CODE];
 
-	return ((NSRect (*)(id, SEL))objc_msgSend) (window, func);
+	return ((NSRect (*)(id, SEL))abi_objc_msgSend_stret)(window, func);
 }
 
 bool NSWindow_isKeyWindow(NSWindow* window) {
@@ -2624,12 +2635,6 @@ void NSWindow_display(NSWindow* window) {
 	objc_msgSend_void(window, func);
 }
 
-void NSWindow_contentView_setWantsLayer(NSWindow* window, bool wantsLayer) {
-	void* func = SI_NS_FUNCTIONS[NS_VIEW_SET_WANTSLAYER_CODE];
-
-	NSView* contentView = NSWindow_contentView(window);
-	objc_msgSend_void_bool(contentView, func, wantsLayer);
-}
 SICDEF void NSWindow_close(NSWindow* window) {
 	void* func = SI_NS_FUNCTIONS[NS_WINDOW_CLOSE_CODE];
 	objc_msgSend_id(window, func);
@@ -2662,30 +2667,15 @@ void NSView_registerForDraggedTypes(NSView* view, siArray(NSPasteboardType) newT
 	NSRelease(array);
 }
 
-bool NSView_wantsLayer(NSView* view) {
-	void* func = SI_NS_FUNCTIONS[NS_VIEW_WANTSLAYER_CODE];
-
-	return objc_msgSend_bool(view, func);
-}
-void NSView_setWantsLayer(NSView* view, bool wantsLayer) {
-	void* func = SI_NS_FUNCTIONS[NS_VIEW_SET_WANTSLAYER_CODE];
-
-	objc_msgSend_void_bool(view, func, wantsLayer);
-}
-
 NSWindow* NSView_window(NSView* view) {
 	void* func = SI_NS_FUNCTIONS[NS_VIEW_WINDOW_CODE];
 	return (NSWindow*)objc_msgSend_id(view, func);
 }
 
-CALayer* NSView_layer(NSView* view) {
-	void* func = SI_NS_FUNCTIONS[NS_VIEW_LAYER_CODE];
-	return (CALayer*)objc_msgSend_id(view, func);
-}
-void NSView_setLayer(NSView* view, CALayer* layer) {
-	void* func = SI_NS_FUNCTIONS[NS_VIEW_SET_LAYER_CODE];
-	objc_msgSend_void_id(view, func, layer);
-}
+si_implement_property(NSView, CALayer*, layer, Layer, view)
+si_implement_property(NSView, bool, wantslayer, WantsLayer, view)
+si_implement_property(NSView, NSViewLayerContentsPlacement, layerContentsPlacement, LayerContentsPlacement, view)
+
 
 NSWindowController* NSWindowController_initWithWindow(NSWindow* window) {
 	void* nsclass = SI_NS_CLASSES[NS_WINDOW_CONTROLLER_CODE];
@@ -3578,7 +3568,7 @@ void* NSArray_objectAtIndex(NSArray* array, NSUInteger index) {
 	return ((id (*)(id, SEL, NSUInteger))objc_msgSend)(array, func, index);
 }
 
-id NSAutoRelease(id obj) { return (id)objc_msgSend_id(obj, SI_NS_FUNCTIONS[NS_AUTORELEASE_CODE]); }
+id NSAutorelease(id obj) { return (id)objc_msgSend_id(obj, SI_NS_FUNCTIONS[NS_AUTORELEASE_CODE]); }
 
 id NSInit(void* class) { return (id)objc_msgSend_id(class, SI_NS_FUNCTIONS[NS_INIT_CODE]); }
 
@@ -3620,7 +3610,9 @@ void NSOpenGLContext_makeCurrentContext(NSOpenGLContext* context) {
 	objc_msgSend_void(context, func);
 }
 
-si_declare_single(NSOpenGLContext, flushBuffer, NS_OPENGL_CONTEXT_FLUSH_BUFFER_CODE)
+void NSOpenGLContext_flushBuffer(NSOpenGLContext* context) {
+	objc_msgSend_void(context, sel_registerName("flushBuffer"));
+}
 
 #if defined(SILICON_ARRAY_IMPLEMENTATION)
 

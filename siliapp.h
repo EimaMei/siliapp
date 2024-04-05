@@ -137,13 +137,13 @@ typedef SI_ENUM(b32, siWindowArg) {
 };
 
 typedef SI_ENUM(u32, siRenderingType) {
-	SI_RENDERING_OPENGL = SI_BIT(0),
-		SI_RENDERINGVER_OPENGL_LEGACY = SI_BIT(1),
-		SI_RENDERINGVER_OPENGL_3_3 = SI_BIT(2),
-		SI_RENDERINGVER_OPENGL_4_4 = SI_BIT(3),
-
-	SI_RENDERING_CPU = SI_BIT(4),
-	SI_RENDERING_NONE = SI_BIT(5),
+	SI_RENDERING_UNSET = SI_BIT(0),
+	SI_RENDERING_NONE = SI_BIT(1),
+	SI_RENDERING_OPENGL = SI_BIT(2),
+		SI_RENDERINGVER_OPENGL_LEGACY = SI_BIT(3),
+		SI_RENDERINGVER_OPENGL_3_3 = SI_BIT(4),
+		SI_RENDERINGVER_OPENGL_4_4 = SI_BIT(5),
+	SI_RENDERING_CPU = SI_BIT(6),
 
 	SI_RENDERING_DEFAULT = SI_RENDERING_OPENGL,
 	SI_RENDERING_BITS = SI_RENDERING_OPENGL | SI_RENDERING_CPU,
@@ -370,6 +370,8 @@ typedef struct {
 	u32 sampleBuffers;
 	b32 stereo;
 	u32 auxBuffers;
+
+	void* context;
 } siOpenGLInfo;
 
 typedef struct {
@@ -435,6 +437,8 @@ typedef struct {
 	siArea maxSize;
 
 	siColor bgColor;
+	u32 fps;
+
 	const siColor* gradient;
 	usize gradientLen;
 } siWinRenderingCtxCPU;
@@ -693,18 +697,13 @@ typedef struct { siVec2 p1, p2, p3; } siTriangleF;
 
 /* Creates a windows based on the specified name, size and arguments, returns a
  * 'siWindow' object. */
-siWindow* siapp_windowMake(siAllocator* alloc, cstring name, siArea size,
-		siWindowArg arg, siRenderingType render, u32 maxDrawCount, u32 maxTexCount,
-		siArea maxTexRes);
+siWindow* siapp_windowMake(cstring name, siArea size, siWindowArg arg);
 /* Creates a windows based on the specified name, position, size and arguments,
  * returns a 'siWindow' object. */
-siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
-		siArea size, siRenderingType render, siWindowArg arg, u32 maxDrawCount,
-		u32 maxTexCount, siArea maxTexRes);
+siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea area, siWindowArg arg);
 
 /* Checks the changes for the specified window and updates the contents of 'out'. */
 const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await);
-
 /* Writes new graphics into the current draw buffer. */
 void siapp_windowRender(siWindow* win);
 /* Clears the graphics of the screen. */
@@ -720,6 +719,9 @@ b32 siapp_windowIsRunning(const siWindow* win);
 
 /* Shows/hides the window depending on the boolean value. */
 void siapp_windowShow(const siWindow* win, b32 show);
+
+/* */
+b32 siapp_windowVSyncSet(siWindow* win, b32 value);
 
 /* Returns the background color of the window. */
 siColor siapp_windowBackgroundGet(const siWindow* win);
@@ -970,22 +972,18 @@ void siapp_color4f(siWindow* win, f32 r, f32 g, f32 b, f32 a);
  * values from 0.0f to 1.0f. */
 void siapp_colorVec4f(siWindow* win, siVec4 color);
 
-/* Sets the current texture coordinates for the window based on the 2 NDC floats. */
+/* Sets the current texture coordinates for the window based on 2 NDC floats. */
 void siapp_texCoords2f(siWindow* win, f32 x, f32 y);
 
 
 /* */
-void siapp_windowRendererMake(siWindow* win, u32 maxDrawCount, siArea maxTexRes,
-		u32 maxTexCount);
+b32 siapp_windowRendererMake(siWindow* win, siRenderingType renderType,
+		u32 maxDrawCount, siArea maxTexRes, u32 maxTexCount);
 /* */
 b32 siapp_windowRendererChange(siWindow* win, u32 newRenderType);
 /* */
 void siapp_windowRendererDestroy(siWindow* win);
 
-
-
-/* Gets OpenGL information used for siliapp. */
-siOpenGLInfo siapp_OpenGLGetInfo(void);
 
 /* Initializes an OpenGL context of the specified window. Returns 'false' if the
  * context was failed to be created. */
@@ -995,6 +993,17 @@ void siapp_windowOpenGLRender(siWindow* win);
 /* Destroys the OpenGL context of the window. */
 void siapp_windowOpenGLDestroy(siWindow* win);
 
+/* */
+b32 siapp_windowCPUInit(siWindow* win, u32 maxTexCount, siArea maxTexRes);
+/* */
+void siapp_windowCPURender(siWindow* win);
+/* */
+void siapp_windowCPUDestroy(siWindow* win);
+
+
+
+/* Gets OpenGL information used for siliapp. */
+siOpenGLInfo siapp_OpenGLInfoGet(void);
 /* Sets the max OpenGL version used for the app (by default it picks the most up
  * to date version on the system). */
 void siapp_OpenGLVersionSet(i32 major, i32 minor);
@@ -1006,14 +1015,10 @@ void siapp_OpenGLSamplesSet(u32 samples);
 void siapp_OpenGLStereoSet(b32 stereo);
 /* Sets the number of aux buffers (0 by default). */
 void siapp_OpenGLAuxBuffersSet(u32 auxBuffers);
-
-
 /* */
-b32 siapp_windowCPUInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount, siArea maxTexRes);
+b32 siapp_OpenGLCurrentContextSet(const siWindow* win);
 /* */
-void siapp_windowCPURender(siWindow* win);
-/* */
-void siapp_windowCPUDestroy(siWindow* win);
+b32 siapp_OpenGLCurrentContextExSet(rawptr window, rawptr context);
 
 
 /* Opens an OS message box with the specified tittle, message, buttons and icons.
@@ -1126,6 +1131,7 @@ void siapp__resizeWindow(siWindow* win, i32 width, i32 height) {
 	switch (win->renderType & SI_RENDERING_BITS) {
 		case SI_RENDERING_OPENGL: {
 			siWinRenderingCtxOpenGL* gl = &win->render.opengl;
+			siapp_OpenGLCurrentContextSet(win);
 
 			if (win->arg & SI_WINDOW_SCALING) {
 		  	    glViewport(0, 0, width, height);
@@ -1161,7 +1167,6 @@ void siapp__resizeWindow(siWindow* win, i32 width, i32 height) {
 		  	break;
 		}
 		case SI_RENDERING_CPU: {
-
 			break;
 		}
 	}
@@ -1705,7 +1710,7 @@ typedef SI_ENUM(i32, siShaderIndex) {
 	} while(0)
 #endif
 
-static siOpenGLInfo glInfo = {false, {0, 0}, 0, 0, {0, 0}, 8, 4, false, 0};
+static siOpenGLInfo glInfo = {false, {0, 0}, 0, 0, {0, 0}, 8, 4, false, 0, nil};
 
 static const char defaultVShaderCode[] = MULTILINE_STR(
 	\x23version 150\n
@@ -1842,22 +1847,22 @@ siMatrix rglMatrixIdentity(void) {
 
 
 F_TRAITS(inline)
-siWindow* siapp_windowMake(siAllocator* alloc, cstring name, siArea size,
-		siWindowArg arg, siRenderingType render, u32 maxDrawCount, u32 maxTexCount,
-		siArea maxTexRes) {
-	return siapp_windowMakeEx(alloc, name, SI_POINT(0, 0), size, arg, render,
-			maxDrawCount, maxTexCount, maxTexRes);
+siWindow* siapp_windowMake(cstring name, siArea size, siWindowArg arg) {
+	return siapp_windowMakeEx(name, SI_POINT(0, 0), size, arg);
 }
-siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
-		siArea size, siWindowArg arg, siRenderingType render, u32 maxDrawCount,
-		u32 maxTexCount, siArea maxTexRes) {
-	SI_ASSERT_NOT_NULL(alloc);
+siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg arg) {
 	SI_ASSERT_NOT_NULL(name);
 
-	siWindow* win = si_mallocItem(alloc, siWindow);
-	si_printf("%i\n", NSThread_isMainThread());
-#if defined(SIAPP_PLATFORM_API_COCOA)
+	siWindow* win = (siWindow*)malloc(sizeof(siWindow));
+	win->arg = arg;
+	win->scaleFactor = SI_VEC2(1, 1);
+	win->cursor = SI_CURSOR_DEFAULT;
+	win->e = (siWindowEvent){0};
+	win->textColor.vec4 = SI_VEC4(1, 1, 1, 1);
+	win->imageColor = SI_VEC4(1, 1, 1, 1);
+	win->renderType = SI_RENDERING_UNSET;
 
+#if defined(SIAPP_PLATFORM_API_COCOA)
 	if (NSApp == nil) {
 		NSApp = NSApplication_sharedApplication();
 		NSApplication_setActivationPolicy(NSApp, NSApplicationActivationPolicyRegular);
@@ -1876,6 +1881,7 @@ siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
 		pos.x = (area.width - size.width) / 2;
 		pos.y = (area.height - size.height) / 2;
 	}
+	win->originalSize = size;
 
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	siAllocator* stack = si_allocatorMakeStack(SI_KILO(4) * sizeof(u16));
@@ -1963,10 +1969,10 @@ siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
 		NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable,
 		NSBackingStoreBuffered, false
 	);
-    NSWindow_setTitle(hwnd, name);
-    NSWindow_makeKeyAndOrderFront(hwnd, nil);
+	NSWindow_setTitle(hwnd, name);
+	NSWindow_makeKeyAndOrderFront(hwnd, nil);
 	NSWindow_setIsVisible(hwnd, true);
-	NSWindow_makeMainWindow(win->hwnd);
+	NSWindow_makeMainWindow(hwnd);
 
 	Class delegateClass = objc_allocateClassPair(objc_getClass("NSObject"), "WindowDelegate", 0);
 	b32 res = class_addIvar(
@@ -1975,38 +1981,33 @@ siWindow* siapp_windowMakeEx(siAllocator* alloc, cstring name, siPoint pos,
 		"L"
 	);
 	SI_ASSERT(res);
+
 	res = class_addMethod(delegateClass, sel_registerName("windowWillResize:toSize:"), (IMP)si__osxWindowResize, "{NSSize=ff}@:{NSSize=ff}");
-	res = class_addMethod(delegateClass, sel_registerName("windowWillStartLiveResize:"), (IMP)si__windowWillStartLiveResize, 0);
-	res = class_addMethod(delegateClass, sel_registerName("windowWillEndLiveResize"), (IMP)si__windowWillEndLiveResize, 0);
 	SI_ASSERT(res);
 
 	id delegate = NSInit(NSAlloc(delegateClass));
 	object_setInstanceVariable(delegate, "siWindow", win);
 
 	NSWindow_setDelegate(hwnd, delegate);
+	NSView_setLayerContentsPlacement(NSWindow_contentView(hwnd), NSViewLayerContentsPlacementTopLeft);
+
+	NSRect frame = NSWindow_frame(hwnd);
+	siapp__resizeWindow(win, frame.size.width, frame.size.height);
+	NSApplication_finishLaunching(NSApp);
 
 	win->hwnd = hwnd;
 	win->delegate = delegate;
 #endif
-	win->arg = arg;
-	win->scaleFactor = SI_VEC2(1, 1);
-	win->originalSize = size;
-	win->cursor = SI_CURSOR_DEFAULT;
-	win->e = (siWindowEvent){0};
-	win->textColor.vec4 = SI_VEC4(1, 1, 1, 1);
-	win->imageColor = SI_VEC4(1, 1, 1, 1);
-	win->maxDrawCount = maxDrawCount;
-	win->renderType = render;
 
-
-	siapp_windowRendererMake(win, maxDrawCount, maxTexRes, maxTexCount);
 	siapp_windowShow(win, (arg & SI_WINDOW_HIDDEN) == 0);
-	NSApplication_finishLaunching(NSApp);
-
 	return win;
 }
+
 const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 	SI_ASSERT_NOT_NULL(win);
+	SI_ASSERT_MSG(
+		win->renderType != SI_RENDERING_UNSET, "You must use the 'siapp_windowRendererMake' function."
+	);
 
 	siWindowEvent* out = &win->e;
 	win->cursorSet = false;
@@ -2538,6 +2539,8 @@ void siapp_windowClose(siWindow* win) {
 #elif defined(SIAPP_PLATFORM_API_COCOA)
 	NSWindow_close(win->hwnd);
 #endif
+
+	free(win);
 }
 
 F_TRAITS(inline)
@@ -2559,6 +2562,36 @@ void siapp_windowShow(const siWindow* win, b32 show) {
 		XUnmapWindow(win->display, win->hwnd);
 	}
 #endif
+}
+
+b32 siapp_windowVSyncSet(siWindow* win, b32 value) {
+	SI_ASSERT_NOT_NULL(win);
+
+	switch (win->renderType & SI_RENDERING_BITS) {
+		case SI_RENDERING_OPENGL: {
+			siWinRenderingCtxOpenGL* gl = &win->render.opengl;
+#if defined(SIAPP_PLATFORM_API_WIN32)
+	#error ""
+#elif defined(SIAPP_PLATFORM_API_X11)
+	#error ""
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+			GLint swapInt = value & 1;
+			NSOpenGLContext_setValues(gl->context, &swapInt, NSOpenGLContextParameterSwapInterval);
+			break;
+#endif
+		}
+		case SI_RENDERING_CPU: {
+			siWinRenderingCtxCPU* cpu = &win->render.cpu;
+#if defined(SIAPP_PLATFORM_API_COCOA)
+			NSScreen* screen = NSScreen_mainScreen();
+			NSInteger fps = ((NSInteger(*)(id, SEL))objc_msgSend)(screen, sel_registerName("maximumFramesPerSecond"));
+			cpu->fps = (1.0f / fps) * 1000;
+#endif
+			break;
+		}
+	}
+
+	return true;
 }
 
 
@@ -2732,6 +2765,8 @@ siCursorType siapp_cursorMake(siByte* data, siArea res, u32 channels) {
 	Cursor handle = XcursorImageLoadCursor(SI_ROOT_WINDOW->display, native);
 	XcursorImageDestroy(native);
 	return -(i64)handle;
+#else
+	return -0xff;
 #endif
 }
 F_TRAITS(inline)
@@ -4451,7 +4486,6 @@ void siapp__cpuDrawImage(siWinRenderingCtxCPU* cpu, siPoint pos, siImage* img,
 	}
 }
 
-#include <x86intrin.h>
 
 F_TRAITS(inline intern)
 void siapp__cpuDrawImageNearest(siWinRenderingCtxCPU* cpu, siRect r, siImage* img,
@@ -4952,24 +4986,30 @@ void siapp_texCoords2f(siWindow* win, f32 x, f32 y) {
 }
 
 
-void siapp_windowRendererMake(siWindow* win, u32 maxDrawCount,
-		siArea maxTexRes, u32 maxTexCount) {
+b32 siapp_windowRendererMake(siWindow* win, siRenderingType renderType,
+		u32 maxDrawCount, siArea maxTexRes, u32 maxTexCount) {
 	SI_ASSERT_NOT_NULL(win);
+	win->maxDrawCount = maxDrawCount;
+	win->renderType = renderType;
 
+	b32 res = true;
 	switch (win->renderType) {
 		case SI_RENDERING_OPENGL: {
 			maxTexRes.width += 1;
 			maxTexRes.height += 1;
 			maxTexCount = si_max(1, maxTexCount);
-			siapp_windowOpenGLInit(win, maxDrawCount, maxTexCount, maxTexRes);
+			res = siapp_windowOpenGLInit(win, maxDrawCount, maxTexCount, maxTexRes);
 			break;
 		}
 		case SI_RENDERING_CPU: {
-			siapp_windowCPUInit(win, maxDrawCount, maxTexCount, maxTexRes);
-			win->atlas = siapp_textureAtlasMake(win, maxTexRes, maxTexCount, SI_RESIZE_DEFAULT);
+			res = siapp_windowCPUInit(win, maxTexCount, maxTexRes);
+			SI_UNUSED(maxDrawCount);
 			break;
 		}
 	}
+	siapp_windowVSyncSet(win, true);
+
+	return res;
 }
 b32 siapp_windowRendererChange(siWindow* win, u32 newRenderType) {
 	SI_ASSERT_NOT_NULL(win);
@@ -4985,8 +5025,7 @@ b32 siapp_windowRendererChange(siWindow* win, u32 newRenderType) {
 
 	siapp_windowRendererDestroy(win);
 
-	win->renderType = newRenderType;
-	siapp_windowRendererMake(win, maxDrawCount, maxTexRes, maxTexCount);
+	siapp_windowRendererMake(win, newRenderType, maxDrawCount, maxTexRes, maxTexCount);
 	siapp_windowBackgroundSet(win, bgClr);
 	siapp_textureResizeMethodChange(&win->atlas, resize);
 
@@ -5002,7 +5041,7 @@ void siapp_windowRendererDestroy(siWindow* win) {
 
 
 F_TRAITS(inline)
-siOpenGLInfo siapp_OpenGLGetInfo(void) {
+siOpenGLInfo siapp_OpenGLInfoGet(void) {
 	return glInfo;
 }
 
@@ -5109,6 +5148,7 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 
 	res = wglMakeCurrent(win->hdc, gl->context);
 	SIAPP_ERROR_CHECK(res == false, "wglMakeCurrent");
+	glInfo.context = gl->context;
 
 #elif defined (SIAPP_PLATFORM_API_X11)
 	// NOTE(EimaMei): Most of this is taken from https://github.com/ColleagueRiley/RGFW/blob/main/RGFW.h.
@@ -5156,8 +5196,11 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 	XVisualInfo* vi = glXGetVisualFromFBConfig(win->display, bestFbc);
 
 	GLXContext context = glXCreateContext(win->display, vi, NULL, GL_TRUE);
-	glXMakeCurrent(win->display, win->hwnd, context);
+
+	b32 res = glXMakeCurrent(win->display, win->hwnd, context);
+	SIAPP_ERROR_CHECK(res == false, "glXMakeCurrent");
 	gl->context = context;
+	glInfo.context = gl->context;
 
 	XFree(fbList);
 	XFree(vi);
@@ -5170,21 +5213,16 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 		NSOpenGLPFAAlphaSize, 8,
 		NSOpenGLPFADepthSize, 24,
 		NSOpenGLPFAStencilSize, 8,
-		NSOpenGLPFAOpenGLProfile, NSOpenGLProfileVersion4_1Core,
+		NSOpenGLPFAOpenGLProfile, NSOpenGLProfileVersion3_2Core,
 		0,
 	};
 	NSOpenGLPixelFormat* format = NSOpenGLPixelFormat_initWithAttributes(defaultAttribs);
 	NSOpenGLView* view = NSOpenGLView_initWithFrame(NSMakeRect(0, 0, gl->size.width, gl->size.height), format);
 	NSOpenGLView_prepareOpenGL(view);
 
-
-	GLint swapInt = 1;
 	NSOpenGLContext* context = NSOpenGLView_openGLContext(view);
-	NSOpenGLContext_setValues(context, &swapInt, NSOpenGLContextParameterSwapInterval);
-
 	NSOpenGLContext_makeCurrentContext(context);
-	NSWindow_setContentView(win->hwnd, (NSView*)view);
-	NSWindow_setIsVisible(win->hwnd, true);
+	NSView_addSubview(NSWindow_contentView(win->hwnd), (NSView*)view);
 
 	CVDisplayLinkRef displayLink;
 	CGDirectDisplayID displayID = CGMainDisplayID();
@@ -5194,6 +5232,7 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 
 	gl->context = context;
 	gl->displayLink = displayLink;
+	glInfo.context = context;
 #endif
 
 	if (glInfo.isLoaded == false) {
@@ -5234,7 +5273,6 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 		glDebugMessageCallback(DebugCallback, nil);
 	}
 #endif
-	si_printf("%i %i\n", glInfo.versionSelected.major, glInfo.versionSelected.minor);
 
 	if (glInfo.versionSelected.major == 4 && glInfo.versionSelected.minor >= 4) {
 		win->renderType |= SI_RENDERINGVER_OPENGL_4_4;
@@ -5391,6 +5429,8 @@ void siapp_windowOpenGLRender(siWindow* win) {
 	SI_ASSERT_NOT_NULL(win);
 
 	siWinRenderingCtxOpenGL* gl = &win->render.opengl;
+	siapp_OpenGLCurrentContextSet(win);
+
 	switch (win->renderType & SI_RENDERING_OPENGL_BITS) {
 		case SI_RENDERINGVER_OPENGL_LEGACY: {
 			glFinish();
@@ -5472,6 +5512,7 @@ void siapp_windowOpenGLDestroy(siWindow* win) {
 			break;
 		}
 	}
+	SI_STOPIF(glInfo.context == gl->context, glInfo.context = nil);
 
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	wglDeleteContext(gl->context);
@@ -5494,11 +5535,37 @@ void siapp_OpenGLSamplesSet(u32 samples) { glInfo.sampleBuffers = samples; }
 void siapp_OpenGLStereoSet(b32 stereo) { glInfo.stereo = stereo & 1; }
 void siapp_OpenGLAuxBuffersSet(u32 auxBuffers) { glInfo.auxBuffers = auxBuffers; }
 
-b32 siapp_windowCPUInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount, siArea maxTexRes) {
+b32 siapp_OpenGLCurrentContextSet(const siWindow* win) {
+	SI_ASSERT_NOT_NULL(win);
+	SI_ASSERT_MSG((win->renderType & SI_RENDERING_BITS) == SI_RENDERING_OPENGL, "The window does not have OpenGL initialized.");
+
+	return siapp_OpenGLCurrentContextExSet(win->hwnd, win->render.opengl.context);
+}
+b32 siapp_OpenGLCurrentContextExSet(rawptr window, rawptr context) {
+	SI_ASSERT_NOT_NULL(window);
+	SI_ASSERT_NOT_NULL(context);
+	SI_STOPIF(glInfo.context == context, return true);
+
+	b32 res = true;
+#if defined(SIAPP_PLATFORM_API_X11)
+	res = glXMakeCurrent(<DISPLAY>, (Drawable)window, (GLXContext)context);
+#elif defined(SIAPP_PLATFORM_API_WIN32)
+	res = wglMakeCurrent(window, context);
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	NSOpenGLContext_makeCurrentContext(context);
+	SI_UNUSED(window);
+#endif
+	SI_STOPIF(res, glInfo.context = context);
+
+	return res;
+}
+
+b32 siapp_windowCPUInit(siWindow* win, u32 maxTexCount, siArea maxTexRes) {
 	SI_ASSERT_NOT_NULL(win);
 	siWinRenderingCtxCPU* cpu = &win->render.cpu;
 	cpu->size = win->originalSize;
 	cpu->maxSize = cpu->size; //siapp_screenGetCurrentSize();
+	cpu->fps = 0;
 
 #if defined(SIAPP_PLATFORM_API_X11)
 	cpu->bitmap = XCreateImage(
@@ -5510,10 +5577,11 @@ b32 siapp_windowCPUInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount, siArea
 	SI_STOPIF(cpu->bitmap == nil, return false);
 	cpu->buffer = (siByte*)calloc(cpu->maxSize.width * cpu->maxSize.height, 4);
 #elif defined(SIAPP_PLATFORM_API_COCOA)
-	cpu->buffer = calloc(cpu->size.width * cpu->size.height, 3);
+	cpu->buffer = (siByte*)calloc(cpu->size.width * cpu->size.height, 3);
 	cpu->redraw = false;
 #endif
 	SI_ASSERT_NOT_NULL(cpu->buffer);
+	win->atlas = siapp_textureAtlasMake(win, maxTexRes, maxTexCount, SI_RESIZE_DEFAULT);
 
 	return true;
 }
@@ -5535,17 +5603,13 @@ void siapp_windowCPURender(siWindow* win) {
 	NSImage_addRepresentation(image, rep);
 
 	NSView* view = NSWindow_contentView(win->hwnd);
-
-	((void(*)(id, SEL, NSRect))objc_msgSend)(NSView_layer(view),
-		sel_registerName("setFrame:"),
-		NSMakeRect(0, win->e.windowSize.height - cpu->size.height - 29, cpu->size.width, cpu->size.height));
-
-	((void(*)(id, SEL, NSString*))objc_msgSend)(NSView_layer(view), sel_registerName("setContentsGravity:"), NSString_stringWithUTF8String("kCAGravityTopLeft"));
 	CALayer_setContents(NSView_layer(view), (id)image);
 
 	release(image);
 	release(rep);
 #endif
+
+	si_sleep(cpu->fps);
 }
 /* */
 void siapp_windowCPUDestroy(siWindow* win) {

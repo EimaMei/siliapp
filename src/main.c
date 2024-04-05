@@ -1,30 +1,34 @@
+#define SICDEF_STATIC
 #include <siliapp.h>
-#define DISABLE_SECOND_WINDOW 1
-
-#if defined(SIAPP_PLATFORM_API_COCOA) && DISABLE_SECOND_WINDOW != 1
-#error "Creating a window on a subthread is not feasible on MacOS."
-#endif
+#define DISABLE_SECOND_WINDOW  0 /* NOTE(EimaMei): For whatever reason, creating a
+								   window on a subthread is not allowed  on MacOS,
+								   meaning you have to create and update your windows
+								   on the main thread only. */
 
 #if DISABLE_SECOND_WINDOW != 1
-void secondWindowLoop(const siWindow* firstWindow);
+void secondWindowLoop(siWindow* firstWindow);
+
+#if defined(SIAPP_PLATFORM_API_COCOA)
+b32 stopRenderingWin2 = false;
+#endif
 #endif
 
 #define CURSOR_W 16
 #define CURSOR_H 32
 
-void RGL_opengl_getError(void);
+
+// fix viewport for opengl
+// Fix the issue with trying to close both windows for GL
 
 int main(void) {
-	siAllocator* alloc = si_allocatorMake(SI_KILO(4));
 
-	//siapp_OpenGLVersionSet(4, 1);
 	siWindow* win = siapp_windowMake(
-		alloc, "Example window | ĄČĘĖĮŠŲ | 「ケケア」",
-		SI_AREA(0, 0), SI_WINDOW_DEFAULT | SI_WINDOW_OPTIMAL_SIZE | SI_WINDOW_SCALING,
-		SI_RENDERING_OPENGL, 4, 2, SI_AREA(1200, 850)
+		"Example window | ĄČĘĖĮŠŲ | 「ケケア」",
+		SI_AREA(0, 0),
+		SI_WINDOW_DEFAULT | SI_WINDOW_OPTIMAL_SIZE | SI_WINDOW_SCALING
 	);
+	siapp_windowRendererMake(win, SI_RENDERING_OPENGL, 4, SI_AREA(1024, 1024), 2);
 	siapp_windowBackgroundSet(win, SI_RGB(128, 0, 0));
-	siapp_drawRect(win, SI_RECT(0, 0, 100, 250), SI_RGB(0, 0, 255));
 
 	siDropEvent drops[2];
 
@@ -40,6 +44,7 @@ int main(void) {
 	}
 
 
+	siAllocator* alloc = si_allocatorMake(sizeof(siColor) * CURSOR_W * CURSOR_H);
 	siColor* icon = si_mallocArray(alloc, siColor, CURSOR_W * CURSOR_H);
 	srand(si_timeNowUTC()); // We create a random cusor because why not.
 
@@ -57,15 +62,21 @@ int main(void) {
 		newRender = SI_RENDERING_CPU;
 
 #if DISABLE_SECOND_WINDOW != 1
+#if !defined(SIAPP_PLATFORM_API_COCOA)
 	siThread t = si_threadCreate(secondWindowLoop, win);
 	si_threadStart(&t);
+#else
+	siWindow* win2 = siapp_windowMakeEx(
+		"Second window", SI_POINT(200, 200), SI_AREA(400, 400),
+		SI_WINDOW_RESIZABLE
+	);
+	siapp_windowRendererMake(win2, SI_RENDERING_OPENGL, 2, SI_AREA(0, 0), 0);
+	siapp_windowBackgroundSet(win2, SI_RGB(113, 57, 173));
+#endif
 #endif
 
-	siImage img = siapp_imageLoad(&win->atlas, "res/castle.jpg");
-	siapp_textureResizeMethodChange(&win->atlas, SI_RESIZE_NEAREST);
-
 	while (siapp_windowIsRunning(win) && !siapp_windowKeyClicked(win, SK_ESC)) {
-		siapp_windowUpdate(win, false);
+		siapp_windowUpdate(win, true);
 		const siWindowEvent* e = siapp_windowEventGet(win);
 
 
@@ -145,15 +156,11 @@ int main(void) {
 				sideClrs[i]
 			);
 		}
-		siapp_drawImage(win, SI_RECT(0, 0, 100, 100), img);
 
 		siColor gradient[3] = {
 			SI_RGB(255, 0, 0), SI_RGB(0, 255, 0), SI_RGB(0, 0, 255)
 		};
 		siapp_windowGradientSet(win, gradient, countof(gradient));
-
-		siWinRenderingCtxCPU* cpu = &win->render.cpu;
-		//stbi_write_png("buffer.png", cpu->size.width, cpu->size.height, 3, cpu->buffer, cpu->size.width * 3);
 
 		i32 length = win->originalSize.height - 50;
 		siapp_drawTriangleIsosceles(
@@ -164,19 +171,28 @@ int main(void) {
 
 		siapp_windowRender(win);
 		siapp_windowSwapBuffers(win);
+
+#if DISABLE_SECOND_WINDOW != 1 && defined(SIAPP_PLATFORM_API_COCOA)
+		secondWindowLoop(win2);
+#endif
 	}
-    //siapp_cursorFree(customCursor);
+    siapp_cursorFree(customCursor);
 
 	for_range (i, 0, countof(drops)) {
 		siapp_windowDragAreaEnd(win, &drops[i]);
 	}
 	siapp_windowClose(win);
 	si_allocatorFree(alloc);
+
+#if DISABLE_SECOND_WINDOW != 1 && defined(SIAPP_PLATFORM_API_COCOA)
+	SI_STOPIF(!stopRenderingWin2, siapp_windowClose(win2));
+#endif
 }
 
 
 #if DISABLE_SECOND_WINDOW != 1
-void secondWindowLoop(const siWindow* firstWindow) {
+void secondWindowLoop(siWindow* firstWindow) {
+#if !defined(SIAPP_PLATFORM_API_COCOA)
     siAllocator* alloc = si_allocatorMake(SI_KILO(1));
 
 	siWindow* win = siapp_windowMakeEx(
@@ -186,6 +202,13 @@ void secondWindowLoop(const siWindow* firstWindow) {
 	siapp_windowBackgroundSet(win, SI_RGB(113, 57, 173));
 
 	while (siapp_windowIsRunning(win) && siapp_windowIsRunning(firstWindow)) {
+#else
+	siWindow* win = firstWindow;
+	if (stopRenderingWin2 || !siapp_windowIsRunning(win)) {
+		SI_STOPIF(!stopRenderingWin2, siapp_windowClose(win); stopRenderingWin2 = true);
+		return ;
+	}
+#endif
 		siapp_windowUpdate(win, true);
 
 		siColor gradient[3] = {
@@ -204,10 +227,12 @@ void secondWindowLoop(const siWindow* firstWindow) {
 
 		siapp_windowRender(win);
 		siapp_windowSwapBuffers(win);
-	}
 
+#if !defined(SIAPP_PLATFORM_API_COCOA)
+	}
 	siapp_windowClose(win); // We must close the window in the same thread where
 							// the window was created at!
     si_allocatorFree(alloc);
+#endif
 }
 #endif
