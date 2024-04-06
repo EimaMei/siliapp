@@ -32,9 +32,13 @@ DOCUMENTATION
 
 ===========================================================================
 CREDITS
-	- Ginger Bill's 'gb.h' (https://github.com//gingerBill/gb) - inspired me to
-	make the Sili Toolchain, as well as certain features were taken from the
-	library and implemented here.
+	- Ginger Bill's 'gb.h' (https://github.com/gingerBill/gb) - inspired the
+	general design for siliapp, as well as parts of the 'gbPlatform' code being
+	used from it.
+
+	- Colleague Riley's 'RGFW' (https://github.com/ColleagueRiley/RGFW) - houses
+	cross-platform implementations for some of the less documented OS-specific
+	features.
 
 LICENSE:
 	- This software is licensed under the zlib license (see the LICENSE at the
@@ -53,6 +57,20 @@ WARNING
 #include <sili.h>
 #include <stb_truetype.h> // TODO(EimaMei): Remove later.
 #include <stb_image.h>
+
+#include <stb_image_write.h>
+
+#include <x86intrin.h>
+typedef union {
+	struct { i32 x, y, z, w; } v;
+	struct { i32 r, g, b, a; } c;
+	__m128i s;
+	i32 a[4];
+} siInt32_4x;
+
+#define si_simd256_setI32(val1, val2, val3, val4) (siInt32_4x){.v = {val1, val2, val3, val4}}
+#define si_simd256_setOneI32(val) (siInt32_4x){.v = {val, val, val, val}}
+
 
 #if !defined(SI_INCLUDE_SI_H)
 	#error "sili.h must be included to use this library."
@@ -132,7 +150,7 @@ typedef SI_ENUM(b32, siWindowArg) {
 	SI_WINDOW_OPTIMAL_SIZE            = SI_BIT(8),
 	SI_WINDOW_KEEP_ASPECT_RATIO       = SI_BIT(9),
 
-	SI_WINDOW_DEFAULT                 = SI_WINDOW_CENTER | SI_WINDOW_RESIZABLE,
+	SI_WINDOW_DEFAULT                 = SI_WINDOW_CENTER | SI_WINDOW_RESIZABLE | SI_WINDOW_SCALING,
 	SI_WINDOW_DESKTOP                 = SI_WINDOW_FULLSCREEN | SI_WINDOW_BORDERLESS,
 };
 
@@ -334,12 +352,15 @@ typedef union {
 } siMatrix;
 
 typedef struct {
-	u16 renderID;
-	siTextureResizeEnum resizeMethod;
+	siRenderingType render;
 
 	union {
 		u32 opengl;
-		siColor* cpu;
+		struct {
+			siColor* data;
+			siSwizzleValue mask[4];
+			siTextureResizeEnum resizeMethod;
+		}* cpu;
 	} texID;
 	u32 texWidth;
 	u32 texHeight;
@@ -353,8 +374,11 @@ typedef struct {
 typedef struct {
 	siTextureAtlas* atlas;
 	siArea size;
-	f32 x1, y1, x2, y2;
-	u32 id;
+
+	union {
+		siCoordsF32 gpu;
+		siCoordsU32 cpu;
+	} pos;
 } siImage;
 
 
@@ -390,17 +414,14 @@ typedef struct {
 typedef struct {
 	siAllocator* alloc;
 	rawptr context;
-#if defined(SIAPP_PLATFORM_API_COCOA)
-	rawptr displayLink;
-#endif
 	siArea size;
 
 	u32 programID;
 	u32 VAO;
 	u32 VBOs[5];
 
-	u32 uniformTexture;
-	u32 uniformMvp;
+	i32 uniformTexture;
+	i32 uniformMvp;
 
 	siVec4 curColor;
 	siVec2 curTexCoords;
@@ -435,6 +456,7 @@ typedef struct {
 #endif
 	siArea size;
 	siArea maxSize;
+	siInt32_4x boundsMask;
 
 	siColor bgColor;
 	u32 fps;
@@ -461,10 +483,7 @@ typedef struct {
 	} render;
 	siTextureAtlas atlas;
 
-	union {
-		siVec4 vec4;
-		siColor rgba;
-	} textColor;
+	siVec4 textColor;
 	siVec4 imageColor;
 
 	siWindowEvent e;
@@ -519,8 +538,8 @@ typedef struct {
 	u32 frames;
 	u32 widthRatio;
 	siArea spriteSize;
-	f32 spriteX2;
-	f32 spriteY2;
+
+	siVec2 gpuPos;
 } siSpriteSheet;
 
 
@@ -554,7 +573,7 @@ typedef struct {
 	siArray(siGlyphSetANDNIndex) sets;
 	siSpriteSheet sheet;
 
-	i32 size;
+	u32 size;
 	f32	scale;
 
 	i32 unknownSymbolIndex;
@@ -607,11 +626,13 @@ typedef SI_ENUM(i32, siMessageBoxButton) {
 	SI_MESSAGE_BOX_YES_NO_CANCEL,
 	SI_MESSAGE_BOX_RETRY_CANCEL,
 	SI_MEESAGE_BOX_CANCEL_TRY_CONTINUE,
-	SI_MESSAGE_BOX_HELP
+	SI_MESSAGE_BOX_HELP,
+
+	SI_MESSAGE_BOX_LEN
 };
 
 typedef SI_ENUM(i32, siMessageBoxIcon) {
-	SI_MESSAGE_BOX_ICON_ERROR = SI_MESSAGE_BOX_HELP + 1,
+	SI_MESSAGE_BOX_ICON_ERROR = SI_MESSAGE_BOX_LEN,
 	SI_MESSAGE_BOX_ICON_WARNING,
 	SI_MESSAGE_BOX_ICON_INFO,
 	SI_MESSAGE_BOX_ICON_QUESTION
@@ -827,13 +848,14 @@ siSiliStr siapp_appDataPathMakeEx(cstring folderName, usize folderNameLen);
 /* Creates a texture atlas from the given window. */
 siTextureAtlas siapp_textureAtlasMake(const siWindow* win, siArea area, u32 maxTexCount,
 		siTextureResizeEnum enumName);
-/* Frees the OpenGL context of the specified texture atlas. */
+/* Frees the context of the specified texture atlas. */
 void siapp_textureAtlasFree(siTextureAtlas atlas);
-/* Applied swizzling mask to the 'param' channel from 'mask'. */
-void siapp_textureSwizzleMask(siTextureAtlas atlas, siSwizzleEnum param,
+
+/* Applied swizzling mask to the 'param' channel from 'mask'. Only works for OpenGL. */
+void siapp_textureAtlasSwizzleMaskSet(siTextureAtlas atlas, siSwizzleEnum param,
 		const siSwizzleValue mask[4]);
-/* Changes the resize method of the specified atlas. Only applies to OpenGL. */
-void siapp_textureResizeMethodChange(siTextureAtlas* atlas, siTextureResizeEnum
+/* Changes the resize method of the specified atlas. */
+void siapp_textureAtlasResizeMethodSet(siTextureAtlas* atlas, siTextureResizeEnum
 		resizeMethod);
 
 
@@ -857,7 +879,7 @@ siSpriteSheet siapp_spriteSheetLoadEx(siTextureAtlas* atlas, const siByte* data,
 /* Returns a 'siImage' structure of the specified sprite. */
 siImage siapp_spriteSheetSpriteGet(siSpriteSheet sheet, usize index);
 /* Sets a new sprite image to the specified index. */
-void siapp_spriteSheetSpriteSetEx(siSpriteSheet sheet, usize index, const siByte* data,
+void siapp_spriteSheetSpriteSetEx(siSpriteSheet sheet, usize index, siByte* data,
 		i32 channels);
 
 
@@ -941,24 +963,13 @@ void siapp_drawPolygonF(siWindow* win, siVec4 rect, u32 sides, siColor color);
 /* */
 void siapp_drawText(siWindow* win, siText text, siPoint pos, u32 size);
 /* */
-void siapp_drawTextItalic(siWindow* win, siText text, siPoint pos, u32 size);
-/* */
-siVec2 siapp_drawTextFmt(siWindow* win, siText text, siPoint pos, u32 size);
-/* */
 void siapp_drawTextF(siWindow* win, siText text, siVec2 pos, u32 size);
-/* */
-void siapp_drawTextItalicF(siWindow* win, siText text, siVec2 pos, u32 size);
-/* */
-siVec2 siapp_drawTextFmtF(siWindow* win, siText text, siVec2 pos, u32 size);
 
 /* */
 f32 siapp_drawCharacter(siWindow* win, const siFont* font, const siGlyphInfo* glyph,
 		siVec2 pos, u32 size);
 /* */
 f32 siapp_drawCharacterScale(siWindow* win, const siFont* font, const siGlyphInfo* glyph,
-		siVec2 pos, u32 size, f32 scaleFactor);
-/* */
-f32 siapp_drawCharacterItalicScale(siWindow* win, const siFont* font, const siGlyphInfo* glyph,
 		siVec2 pos, u32 size, f32 scaleFactor);
 
 
@@ -1041,12 +1052,12 @@ siMessageBoxResult siapp_messageBoxEx(const siWindow* win, cstring title, usize 
 #define WGL_ARB_create_context
 #define WGL_ARB_create_context_profile
 #define WGL_EXT_swap_control
-#define SIGL_INCLUDE_DEPRECATED_GL_1_1_FUNCTIONS
 #include <siligl.h>
 
 #if defined(SIAPP_PLATFORM_API_COCOA)
 #define GL_SILENCE_DEPRECATION
 #define SILICON_IMPLEMENTATION
+#define SICDEF
 #include <silicon.h>
 #endif
 
@@ -1133,6 +1144,10 @@ void siapp__resizeWindow(siWindow* win, i32 width, i32 height) {
 			siWinRenderingCtxOpenGL* gl = &win->render.opengl;
 			siapp_OpenGLCurrentContextSet(win);
 
+#if defined(SIAPP_PLATFORM_API_COCOA)
+	objc_msgSend_void(gl->context, sel_registerName("update"));
+#endif
+
 			if (win->arg & SI_WINDOW_SCALING) {
 		  	    glViewport(0, 0, width, height);
 		  	}
@@ -1160,16 +1175,27 @@ void siapp__resizeWindow(siWindow* win, i32 width, i32 height) {
 		  	f32 viewH = view[3];
 
 		  	win->scaleFactor = SI_VEC2(viewW / gl->size.width, viewH / gl->size.height);
-		  	win->e.windowSizeScaled = SI_AREA(
-		  	  	si_round(width / win->scaleFactor.x),
-		  	  	si_round(height / win->scaleFactor.y)
-		  	);
 		  	break;
 		}
 		case SI_RENDERING_CPU: {
+			siWinRenderingCtxCPU* cpu = &win->render.cpu;
+			cpu->size = SI_AREA(width, height);
+			cpu->redraw = true;
+
+
+			if (win->arg & SI_WINDOW_SCALING) {
+				win->scaleFactor = SI_VEC2(
+					(f32)width / win->originalSize.width,
+					(f32)height / win->originalSize.height
+				);
+		  	}
 			break;
 		}
 	}
+	win->e.windowSizeScaled = SI_AREA(
+		si_round(width / win->scaleFactor.x),
+		si_round(height / win->scaleFactor.y)
+	);
 }
 #endif
 
@@ -1612,7 +1638,6 @@ void siapp__x11CheckStartup(void) {
 b32 si__osxWindowClose(NSWindow* self) {
 	siWindow* win = nil;
 	object_getInstanceVariable(self, "siWindow", (void*)&win);
-	si_printf("wtf??\n", win);
 
 	win->e.type.isClosed = true;
 	return true;
@@ -1622,38 +1647,20 @@ NSSize si__osxWindowResize(void* self, SEL sel, NSSize frameSize) {
 	object_getInstanceVariable(self, "siWindow", (void*)&win);
 	SI_ASSERT_NOT_NULL(win);
 
-	siWinRenderingCtxCPU* cpu = &win->render.cpu;
-	siapp__resizeWindow(win, frameSize.width, frameSize.height);
+	siapp__resizeWindow(win, frameSize.width, frameSize.height - 29);
 	return frameSize;
+	SI_UNUSED(sel);
 }
 
-void si__windowWillStartLiveResize(void* self) {
-	siWindow* win = nil;
-	object_getInstanceVariable(self, "siWindow", (void*)&win);
-	siWinRenderingCtxCPU* cpu = &win->render.cpu;
-
+NSSize si__osxWindowFullscreen(void* self, SEL sel, NSSize frameSize) {
+	return si__osxWindowResize(self, sel, frameSize);
 }
-void si__windowWillEndLiveResize(void* self) {
-	siWindow* win = nil;
-	object_getInstanceVariable(self, "siWindow", (void*)&win);
-#if 0
-	NSView* view = NSWindow_contentView(win->hwnd);
-	siWinRenderingCtxCPU* cpu = &win->render.cpu;
-	((void(*)(id, SEL, NSRect))objc_msgSend)(NSView_layer(view),
-		sel_registerName("setFrame:"),
-		NSMakeRect(0, 0, cpu->size.width, cpu->size.height)
-	);
-#endif
 
-	siapp_windowRender(win);
-
-}
-CVReturn displayCallback(CVDisplayLinkRef displayLink, const CVTimeStamp* inNow,
-		const CVTimeStamp* inOutputTime, CVOptionFlags flagsIn, CVOptionFlags* flagsOut,
-		void* displayLinkContext) {
-	return kCVReturnSuccess;
-	SI_UNUSED(displayLink); SI_UNUSED(inNow); SI_UNUSED(inOutputTime); SI_UNUSED(flagsIn);
-	SI_UNUSED(flagsOut); SI_UNUSED(displayLinkContext);
+NSRect si__osxTest(void* self, SEL sel, NSWindow* window, NSRect newFrame) {
+	si_printf("test\n");
+	si__osxWindowResize(self, sel, newFrame.size);
+	return newFrame;
+	SI_UNUSED(window);
 }
 
 #define SI__CHANNEL_COUNT 3
@@ -1712,7 +1719,7 @@ typedef SI_ENUM(i32, siShaderIndex) {
 
 static siOpenGLInfo glInfo = {false, {0, 0}, 0, 0, {0, 0}, 8, 4, false, 0, nil};
 
-static const char defaultVShaderCode[] = MULTILINE_STR(
+static const char VSHADER_DEFAULT[] = MULTILINE_STR(
 	\x23version 150\n
 
 	in vec3 pos;
@@ -1753,7 +1760,6 @@ static const char FSHADER_3_1[] = MULTILINE_STR(
 	in vec4 fragClr;
 	flat in uint fragTexID;
 	out vec4 finalColor;
-
 
 	uniform sampler2D textures[%u];
 
@@ -1858,15 +1864,16 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 	win->scaleFactor = SI_VEC2(1, 1);
 	win->cursor = SI_CURSOR_DEFAULT;
 	win->e = (siWindowEvent){0};
-	win->textColor.vec4 = SI_VEC4(1, 1, 1, 1);
 	win->imageColor = SI_VEC4(1, 1, 1, 1);
 	win->renderType = SI_RENDERING_UNSET;
+	win->textColor = SI_VEC4(1, 1, 1, 1);
 
 #if defined(SIAPP_PLATFORM_API_COCOA)
 	if (NSApp == nil) {
+		si_func_to_SEL_with_name(SI_DEFAULT, "windowShouldClose", (void*)si__osxWindowClose);
+
 		NSApp = NSApplication_sharedApplication();
 		NSApplication_setActivationPolicy(NSApp, NSApplicationActivationPolicyRegular);
-		si_func_to_SEL_with_name(SI_DEFAULT, "windowShouldClose", (void*)si__osxWindowClose);
 	}
 #endif
 
@@ -1983,6 +1990,8 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 	SI_ASSERT(res);
 
 	res = class_addMethod(delegateClass, sel_registerName("windowWillResize:toSize:"), (IMP)si__osxWindowResize, "{NSSize=ff}@:{NSSize=ff}");
+	res = class_addMethod(delegateClass, sel_registerName("window:willUseFullScreenContentSize:"), (IMP)si__osxWindowFullscreen, "{NSSize=ff}@:{NSSize=ff}");
+	res = class_addMethod(delegateClass, sel_registerName("windowWillUseStandardFrame:defaultFrame:"), (IMP)si__osxTest, "{NSRect=ffff}@:@{NSRect=ffff}");
 	SI_ASSERT(res);
 
 	id delegate = NSInit(NSAlloc(delegateClass));
@@ -1991,8 +2000,7 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 	NSWindow_setDelegate(hwnd, delegate);
 	NSView_setLayerContentsPlacement(NSWindow_contentView(hwnd), NSViewLayerContentsPlacementTopLeft);
 
-	NSRect frame = NSWindow_frame(hwnd);
-	siapp__resizeWindow(win, frame.size.width, frame.size.height);
+	siapp__resizeWindow(win, size.width, size.height);
 	NSApplication_finishLaunching(NSApp);
 
 	win->hwnd = hwnd;
@@ -2006,11 +2014,12 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 	SI_ASSERT_NOT_NULL(win);
 	SI_ASSERT_MSG(
-		win->renderType != SI_RENDERING_UNSET, "You must use the 'siapp_windowRendererMake' function."
+		win->renderType != SI_RENDERING_UNSET, "You must call the 'siapp_windowRendererMake' function at least once."
 	);
 
 	siWindowEvent* out = &win->e;
 	win->cursorSet = false;
+	out->charBufferLen = 0;
 
 	out->type = (siEventType){0};
 
@@ -2042,7 +2051,6 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 		GetKeyState(VK_SHIFT);
 		GetKeyState(VK_MENU);
 		GetKeyboardState(__win32KBState);
-		out->charBufferLen = 0;
 	}
 
 
@@ -2430,14 +2438,55 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 			NSApplication_sendEvent(NSApp, event);
 		}
 	}
-	else {
-		NSEvent* event = NSApplication_nextEventMatchingMask(
-			NSApp, NSEventMaskAny,
-			NSDate_distantFuture(),
-			NSDefaultRunLoopMode, true
-		);
 
-		NSApplication_sendEvent(NSApp, event);
+	NSEvent* event = NSApplication_nextEventMatchingMask(
+		NSApp, NSEventMaskAny,
+		NSDate_distantFuture(),
+		NSDefaultRunLoopMode, true
+	);
+	NSApplication_sendEvent(NSApp, event);
+
+	switch (NSEvent_type(event)) {
+		case NSEventTypeKeyDown: {
+			siKeyType key = siapp_osKeyToSili(NSEvent_keyCode(event));
+
+			out->type.keyPress = true;
+			out->curKey = key;
+
+			siKeyState* keyState = &out->keys[key];
+			keyState->clicked = !keyState->pressed;
+			keyState->pressed = true;
+			keyState->released = false;
+
+			if (keyState->clicked) {
+				SK_TO_INT(out->keys[SK__EVENT]) |= SI_BIT(7);
+				out->__private.keyCache[out->__private.keyCacheLen % 16] = key;
+				out->__private.keyCacheLen += 1;
+			}
+
+			cstring buf = NSEvent_characters(event);
+			usize len = si_cstrLen(buf);
+			memcpy(out->charBuffer, buf, len);
+			out->charBufferLen = len;
+			out->charBuffer[out->charBufferLen] = '\0';
+			break;
+		}
+		case NSEventTypeKeyUp: {
+			siKeyType key = siapp_osKeyToSili(NSEvent_keyCode(event));
+
+			out->type.keyRelease = true;
+			out->curKey = key;
+
+			siKeyState* keyState = &out->keys[key];
+			keyState->clicked = false;
+			keyState->pressed = false;
+			keyState->released = true;
+
+			SK_TO_INT(out->keys[SK__EVENT]) |= SI_BIT(7);
+			out->__private.keyCache[out->__private.keyCacheLen % 16] = key;
+			out->__private.keyCacheLen += 1;
+			break;
+		}
 	}
 
 	if ((win->renderType & SI_RENDERING_BITS) == SI_RENDERING_CPU && win->render.cpu.redraw) {
@@ -2784,13 +2833,29 @@ void siapp_cursorFree(siCursorType cursor) {
 F_TRAITS(inline)
 void siapp_windowTextColorSet(siWindow* win, siColor color) {
 	SI_ASSERT_NOT_NULL(win);
-	win->textColor.vec4 = SI_VEC4(
-		color.r / 255.0f,
-		color.g / 255.0f,
-		color.b / 255.0f,
-		color.a / 255.0f
-	);
+
+	switch (win->renderType & SI_RENDERING_BITS) {
+		case SI_RENDERING_OPENGL: {
+			win->textColor = SI_VEC4(
+				color.r / 255.0f,
+				color.g / 255.0f,
+				color.b / 255.0f,
+				color.a / 255.0f
+			);
+			break;
+		}
+		case SI_RENDERING_CPU: {
+			win->textColor = SI_VEC4(
+				color.b / 255.0f,
+				color.g / 255.0f,
+				color.r / 255.0f,
+				color.a / 255.0f
+			);
+			break;
+		}
+	}
 }
+
 F_TRAITS(inline)
 void siapp_windowImageColorSet(siWindow* win, siColor color) {
 	SI_ASSERT_NOT_NULL(win);
@@ -3402,6 +3467,115 @@ siKeyType siapp_osKeyToSili(i32 key) {
 		case XK_F13:            return SK_F13;
 		case XK_F14:            return SK_F14;
 		case XK_F15:            return SK_F15;
+#elif defined (SIAPP_PLATFORM_API_COCOA)
+		/* NOTE(EimaMei): Full credit goes to bill of 'gb.h' for this. */
+
+		// NOTE(bill): WHO THE FUCK DESIGNED THIS VIRTUAL KEY CODE SYSTEM?!
+		// THEY ARE FUCKING IDIOTS!
+		case 0x1d: return SK_0;
+		case 0x12: return SK_1;
+		case 0x13: return SK_2;
+		case 0x14: return SK_3;
+		case 0x15: return SK_4;
+		case 0x17: return SK_5;
+		case 0x16: return SK_6;
+		case 0x1a: return SK_7;
+		case 0x1c: return SK_8;
+		case 0x19: return SK_9;
+
+		case 0x00: return SK_A;
+		case 0x0b: return SK_B;
+		case 0x08: return SK_C;
+		case 0x02: return SK_D;
+		case 0x0e: return SK_E;
+		case 0x03: return SK_F;
+		case 0x05: return SK_G;
+		case 0x04: return SK_H;
+		case 0x22: return SK_I;
+		case 0x26: return SK_J;
+		case 0x28: return SK_K;
+		case 0x25: return SK_L;
+		case 0x2e: return SK_M;
+		case 0x2d: return SK_N;
+		case 0x1f: return SK_O;
+		case 0x23: return SK_P;
+		case 0x0c: return SK_Q;
+		case 0x0f: return SK_R;
+		case 0x01: return SK_S;
+		case 0x11: return SK_T;
+		case 0x20: return SK_U;
+		case 0x09: return SK_V;
+		case 0x0d: return SK_W;
+		case 0x07: return SK_X;
+		case 0x10: return SK_Y;
+		case 0x06: return SK_Z;
+
+		case 0x21: return SK_BRACKET_L;
+		case 0x1e: return SK_BRACKET_R;
+		case 0x29: return SK_SEMICOLON;
+		case 0x2b: return SK_COMMA;
+		case 0x2f: return SK_PERIOD;
+		case 0x27: return SK_QUOTE;
+		case 0x2c: return SK_SLASH;
+		case 0x2a: return SK_BACKSLASH;
+		case 0x32: return SK_GRAVE;
+		case 0x18: return SK_EQUALS;
+		case 0x1b: return SK_MINUS;
+		case 0x31: return SK_SPACE;
+
+		case 0x35: return SK_ESC;
+		case 0x3b: return SK_CTRL_L;       // Left Control
+		case 0x38: return SK_SHIFT_L;      // Left Shift
+		case 0x3a: return SK_ALT_L;        // Left Alt
+		case 0x37: return SK_SYSTEM_L;     // Left OS specific: window (Windows and Linux), apple/cmd (MacOS X), ...
+		case 0x3e: return SK_CTRL_R;       // Right Control
+		case 0x3c: return SK_SHIFT_R;      // Right Shift
+		case 0x3d: return SK_ALT_R;        // Right Alt
+		case 0x6e: return SK_MENU;         // Menu
+		case 0x24: return SK_RETURN;       // Return
+		case 0x33: return SK_BACKSPACE;    // Backspace
+		case 0x30: return SK_TAB;          // Tabulation
+		case 0x74: return SK_PAGE_UP;      // Page up
+		case 0x79: return SK_PAGE_DOWN;    // Page down
+		case 0x77: return SK_END;          // End
+		case 0x73: return SK_HOME;         // Home
+		case 0x72: return SK_INSERT;       // Insert
+		case 0x75: return SK_DELETE;       // Delete
+		case 0x45: return SK_PLUS;         // +
+		case 0x4e: return SK_SUBTRACT;     // -
+		case 0x43: return SK_MULTIPLY;     // *
+		case 0x4b: return SK_DIVIDE;       // /
+		case 0x7b: return SK_LEFT;         // Left arrow
+		case 0x7c: return SK_RIGHT;        // Right arrow
+		case 0x7e: return SK_UP;           // Up arrow
+		case 0x7d: return SK_DOWN;         // Down arrow
+		case 0x52: return SK_NUMPAD_0;     // Numpad 0
+		case 0x53: return SK_NUMPAD_1;     // Numpad 1
+		case 0x54: return SK_NUMPAD_2;     // Numpad 2
+		case 0x55: return SK_NUMPAD_3;     // Numpad 3
+		case 0x56: return SK_NUMPAD_4;     // Numpad 4
+		case 0x57: return SK_NUMPAD_5;     // Numpad 5
+		case 0x58: return SK_NUMPAD_6;     // Numpad 6
+		case 0x59: return SK_NUMPAD_7;     // Numpad 7
+		case 0x5b: return SK_NUMPAD_8;     // Numpad 8
+		case 0x5c: return SK_NUMPAD_9;     // Numpad 9
+		case 0x41: return SK_NUMPAD_DOT;   // Numpad .
+		case 0x4c: return SK_NUMPAD_ENTER; // Numpad Enter
+		case 0x7a: return SK_F1;           // F1
+		case 0x78: return SK_F2;           // F2
+		case 0x63: return SK_F3;           // F3
+		case 0x76: return SK_F4;           // F4
+		case 0x60: return SK_F5;           // F5
+		case 0x61: return SK_F6;           // F6
+		case 0x62: return SK_F7;           // F7
+		case 0x64: return SK_F8;           // F8
+		case 0x65: return SK_F9;           // F8
+		case 0x6d: return SK_F10;          // F10
+		case 0x67: return SK_F11;          // F11
+		case 0x6f: return SK_F12;          // F12
+		case 0x69: return SK_F13;          // F13
+		case 0x6b: return SK_F14;          // F14
+		case 0x71: return SK_F15;          // F15
 #endif
 	}
 
@@ -3614,15 +3788,14 @@ siTextureAtlas siapp_textureAtlasMake(const siWindow* win, siArea area, u32 maxT
 	SI_ASSERT_NOT_NULL(win);
 
 	siTextureAtlas atlas;
-	atlas.renderID = win->renderType & SI_RENDERING_BITS;
-	atlas.resizeMethod = enumName;
+	atlas.render = win->renderType & SI_RENDERING_BITS;
 	atlas.texWidth = area.width;
 	atlas.texHeight = area.height;
 	atlas.curCount = 0;
 	atlas.curWidth = 0;
 	atlas.totalWidth = atlas.texWidth * maxTexCount;
 
-	switch (atlas.renderID) {
+	switch (atlas.render) {
 		case SI_RENDERING_OPENGL: {
 			glGenTextures(1, &atlas.texID.opengl);
 			u32 index = atlas.texID.opengl - 1;
@@ -3630,7 +3803,7 @@ siTextureAtlas siapp_textureAtlasMake(const siWindow* win, siArea area, u32 maxT
 			glActiveTexture(GL_TEXTURE0 + index);
 			glBindTexture(GL_TEXTURE_2D, atlas.texID.opengl);
 
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, atlas.totalWidth, atlas.texHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, nil);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, atlas.totalWidth, atlas.texHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, nil);
 
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, enumName);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, enumName);
@@ -3641,7 +3814,10 @@ siTextureAtlas siapp_textureAtlasMake(const siWindow* win, siArea area, u32 maxT
 			break;
 		}
 		case SI_RENDERING_CPU: {
-			atlas.texID.cpu = (siColor*)calloc(sizeof(siColor), atlas.totalWidth * area.height);
+			atlas.texID.cpu = malloc(sizeof(*atlas.texID.cpu));
+			atlas.texID.cpu->data = (siColor*)calloc(sizeof(siColor), atlas.totalWidth * area.height);
+			memcpy(atlas.texID.cpu->mask, si_buf(i32, SI_SWIZZLE_R, SI_SWIZZLE_G, SI_SWIZZLE_B, SI_SWIZZLE_A), sizeof(i32) * 4);
+			atlas.texID.cpu->resizeMethod = enumName;
 			break;
 		}
 	}
@@ -3649,37 +3825,56 @@ siTextureAtlas siapp_textureAtlasMake(const siWindow* win, siArea area, u32 maxT
 	return atlas;
 }
 void siapp_textureAtlasFree(siTextureAtlas atlas) {
-	switch (atlas.renderID) {
+	switch (atlas.render) {
 		case SI_RENDERING_OPENGL: {
 			glDeleteTextures(1, &atlas.texID.opengl);
 			break;
 		}
 		case SI_RENDERING_CPU: {
+			free(atlas.texID.cpu->data);
 			free(atlas.texID.cpu);
 			break;
 		}
 	}
 }
-void siapp_textureSwizzleMask(siTextureAtlas atlas, siSwizzleEnum param,
+void siapp_textureAtlasSwizzleMaskSet(siTextureAtlas atlas, siSwizzleEnum param,
 		const siSwizzleValue mask[4]) {
 	SI_ASSERT_NOT_NULL(mask);
+	SI_ASSERT(si_betweenu(param, SI_SWIZZLE_R, SI_SWIZZLE_RGBA));
 
-	switch (atlas.renderID) {
+	switch (atlas.render) {
 		case SI_RENDERING_OPENGL: {
 			glActiveTexture(GL_TEXTURE0 + atlas.texID.opengl - 1);
 			glBindTexture(GL_TEXTURE_2D, atlas.texID.opengl);
 			glTexParameteriv(GL_TEXTURE_2D, param, mask);
+			break;
+		}
+		case SI_RENDERING_CPU: {
+			if (param == SI_SWIZZLE_RGBA) {
+				memcpy(atlas.texID.cpu->mask, mask, sizeof(siSwizzleValue) * 4);
+				break;
+			}
+
+			usize i = param - SI_SWIZZLE_R;
+			atlas.texID.cpu->mask[i] = mask[0];
+			break;
 		}
 	}
 }
-void siapp_textureResizeMethodChange(siTextureAtlas* atlas, siTextureResizeEnum
+void siapp_textureAtlasResizeMethodSet(siTextureAtlas* atlas, siTextureResizeEnum
 		resizeMethod) {
 	SI_ASSERT_NOT_NULL(atlas);
-	atlas->resizeMethod = resizeMethod;
 
-	if (atlas->renderID == SI_RENDERING_OPENGL) {
-		glActiveTexture(GL_TEXTURE0 + atlas->texID.opengl - 1);
-		glBindTexture(GL_TEXTURE_2D, atlas->texID.opengl);
+	switch (atlas->render) {
+		case SI_RENDERING_OPENGL: {
+			glActiveTexture(GL_TEXTURE0 + atlas->texID.opengl - 1);
+			glBindTexture(GL_TEXTURE_2D, atlas->texID.opengl);
+			break;
+		}
+		case SI_RENDERING_CPU: {
+			atlas->texID.cpu->resizeMethod = resizeMethod;
+			break;
+		}
 	}
 }
 
@@ -3719,21 +3914,26 @@ siImage siapp_imageLoadEx(siTextureAtlas* atlas, const siByte* buffer, u32 width
 	siImage res;
 	res.size = SI_AREA(width, height);
 	res.atlas = atlas;
-	res.id = atlas->curCount;
 
-	switch (atlas->renderID) {
+	switch (atlas->render) {
 		case SI_RENDERING_OPENGL: {
-			u32 c = 0;
+			res.pos.gpu.x1 = (f32)atlas->curWidth / atlas->totalWidth;
+			res.pos.gpu.x2 = res.pos.gpu.x1 + (f32)width / atlas->totalWidth;
+			res.pos.gpu.y1 = 0;
+			res.pos.gpu.y2 = (f32)height / atlas->texHeight;
+
+			glActiveTexture(GL_TEXTURE0 + atlas->texID.opengl - 1);
+			glBindTexture(GL_TEXTURE_2D, atlas->texID.opengl);
+			SI_STOPIF(buffer == nil, break);
+
+			u32 c;
 			switch (channels) {
 				case 1: c = GL_ALPHA; break;
 				case 2: c = GL_RG; break;
 				case 3: c = GL_RGB; break;
 				case 4: c = GL_RGBA; break;
+				default: SI_PANIC();
 			}
-
-
-			glActiveTexture(GL_TEXTURE0 + atlas->texID.opengl - 1);
-			glBindTexture(GL_TEXTURE_2D, atlas->texID.opengl);
 
 			glTexSubImage2D(
 				GL_TEXTURE_2D,
@@ -3744,20 +3944,16 @@ siImage siapp_imageLoadEx(siTextureAtlas* atlas, const siByte* buffer, u32 width
 				buffer
 			);
 
-			res.x1 = (f32)atlas->curWidth / atlas->totalWidth;
-			res.x2 = res.x1 + (f32)width / atlas->totalWidth;
-			res.y1 = 0;
-			res.y2 = (f32)height / atlas->texHeight;
-
 			break;
 		}
 		case SI_RENDERING_CPU: {
-			siColor* atlasBuf = atlas->texID.cpu;
-			res.x1 = atlas->curWidth;
-			res.y1 = 0;
+			siColor* atlasBuf = atlas->texID.cpu->data;
+			res.pos.cpu.x1 = atlas->curWidth;
+			res.pos.cpu.y1 = 0;
+			SI_STOPIF(buffer == nil, break);
 
 			for_range (y, 0, height) {
-				usize index = y * atlas->totalWidth + res.x1;
+				usize index = y * atlas->totalWidth + res.pos.cpu.x1;
 				for_range (x, 0, width) {
 					siColor clr;
 					switch (channels) {
@@ -3791,21 +3987,23 @@ siImage siapp_imageLoadEx(siTextureAtlas* atlas, const siByte* buffer, u32 width
 F_TRAITS(inline)
 siSpriteSheet siapp_spriteSheetLoad(siTextureAtlas* atlas, cstring filename,
 		siArea spriteSize) {
-	siSpriteSheet res;
-	res.base = siapp_imageLoad(atlas, filename);
+	SI_ASSERT_NOT_NULL(atlas);
+	SI_ASSERT_NOT_NULL(filename);
 
-	SI_ASSERT_MSG(
-		spriteSize.width <= res.base.size.width
-		&& spriteSize.height <= res.base.size.height,
-		"Sprite's size dimensions must be less or equal to the spritesheet's."
-	);
+	siFile file = si_fileOpen(filename);
 
-	res.spriteSize = spriteSize;
-	res.widthRatio = res.base.size.width / spriteSize.width;
-	res.frames = res.widthRatio * (res.base.size.width / spriteSize.height);
-	res.spriteX2 = (f32)spriteSize.width / atlas->totalWidth;
-	res.spriteY2 = (f32)spriteSize.height / atlas->texHeight;
+	siAllocator* tmp = si_allocatorMake(file.size);
+	siByte* content = si_fileReadContents(tmp, file);
 
+	i32 width, height, channels;
+	siByte* buffer = SIAPP_IMAGE_LOAD(content, file.size, &width, &height, &channels);
+	SI_ASSERT_NOT_NULL(buffer);
+
+	siSpriteSheet res = siapp_spriteSheetLoadEx(atlas, buffer, width, height, channels, spriteSize);
+	SIAPP_IMAGE_FREE(buffer);
+
+	si_fileClose(file);
+	si_allocatorFree(tmp);
 	return res;
 }
 F_TRAITS(inline)
@@ -3822,8 +4020,16 @@ siSpriteSheet siapp_spriteSheetLoadEx(siTextureAtlas* atlas, const siByte* data,
 	res.spriteSize = spriteSize;
 	res.widthRatio = width / spriteSize.width;
 	res.frames = res.widthRatio * (width / spriteSize.height);
-	res.spriteX2 = (f32)spriteSize.width / atlas->totalWidth;
-	res.spriteY2 = (f32)spriteSize.height / atlas->texHeight;
+
+	switch (atlas->render) {
+		case SI_RENDERING_OPENGL: {
+			res.gpuPos = SI_VEC2(
+				(f32)spriteSize.width / atlas->totalWidth,
+				(f32)spriteSize.height / atlas->texHeight
+			);
+			break;
+		}
+	}
 
 	return res;
 }
@@ -3839,15 +4045,27 @@ siImage siapp_spriteSheetSpriteGet(siSpriteSheet sheet, usize index) {
 	siImage copy = sheet.base;
 	copy.size = sheet.spriteSize;
 
-	copy.x1 = sheet.base.x1 + (f32)XY.x / sheet.base.atlas->totalWidth;
-	copy.x2 = copy.x1 + sheet.spriteX2;
-	copy.y1 = sheet.base.y1 + (f32)XY.y / sheet.base.atlas->texHeight;
-	copy.y2 = copy.y1 + sheet.spriteY2;
+	switch (copy.atlas->render) {
+		case SI_RENDERING_OPENGL: {
+			copy.pos.gpu.x1 = sheet.base.pos.gpu.x1 + (f32)XY.x / sheet.base.atlas->totalWidth;
+			copy.pos.gpu.x2 = copy.pos.gpu.x1 + sheet.gpuPos.x;
+			copy.pos.gpu.y1 = sheet.base.pos.gpu.y1 + (f32)XY.y / sheet.base.atlas->texHeight;
+			copy.pos.gpu.y2 = copy.pos.gpu.y1 + sheet.gpuPos.y;
+			break;
+		}
+		case SI_RENDERING_CPU: {
+			copy.pos.cpu.x1 = sheet.base.pos.cpu.x1 + XY.x;
+			copy.pos.cpu.x2 = copy.pos.cpu.x1 + copy.size.width;
+			copy.pos.cpu.y1 = sheet.base.pos.cpu.y1 + XY.y;
+			copy.pos.cpu.y2 = copy.pos.gpu.y1 + copy.size.height;
+			break;
+		}
+	}
 
 	return copy;
 }
 
-void siapp_spriteSheetSpriteSetEx(siSpriteSheet sheet, usize index, const siByte* data,
+void siapp_spriteSheetSpriteSetEx(siSpriteSheet sheet, usize index, siByte* data,
 		i32 channels) {
 	SI_ASSERT_FMT(index < sheet.frames, "Index '%i' is not a valid frame index.", index);
 
@@ -3856,31 +4074,116 @@ void siapp_spriteSheetSpriteSetEx(siSpriteSheet sheet, usize index, const siByte
 		index / sheet.widthRatio * sheet.spriteSize.height
 	);
 
-	u32 c;
-	switch (channels) {
-		case 1: c = GL_RED; break;
-		case 2: c = GL_RG; break;
-		case 3: c = GL_RGB; break;
-		case 4: c = GL_RGBA; break;
-		default: c = 0;
-	}
-
 	siImage img = sheet.base;
 	siTextureAtlas* atlas = img.atlas;
-	usize xOffset = img.id * atlas->texWidth;
 
-	switch (atlas->renderID) {
+	switch (atlas->render) {
 		case SI_RENDERING_OPENGL: {
+			i32 xOffset = img.pos.gpu.x1 * atlas->totalWidth;
+			u32 c;
+			switch (channels) {
+				case 1: c = GL_RED; break;
+				case 2: c = GL_RG; break;
+				case 3: c = GL_RGB; break;
+				case 4: c = GL_RGBA; break;
+			}
+
 			glActiveTexture(GL_TEXTURE0 + atlas->texID.opengl - 1);
 			glBindTexture(GL_TEXTURE_2D, atlas->texID.opengl);
 			glTexSubImage2D(
-				GL_TEXTURE_2D,
-				0,
+				GL_TEXTURE_2D, 0,
 				xOffset + XY.x, XY.y,
-				sheet.spriteSize.width, sheet.spriteSize.height, c,
-				GL_UNSIGNED_BYTE,
+				sheet.spriteSize.width, sheet.spriteSize.height,
+				c, GL_UNSIGNED_BYTE,
 				data
 			);
+			break;
+		}
+
+		case SI_RENDERING_CPU: {
+#if 1
+			siInt32_4x inc = si_simd256_setOneI32(0);
+			siInt32_4x offset = si_simd256_setOneI32(0);
+			const siByte* RGBA[4];
+			siByte ZERO = 0, ONE = 255;
+
+
+			siSwizzleValue* mask = atlas->texID.cpu->mask;
+			const siByte* buffer = data;
+
+			for_range (i, 0, 4) {
+				const siByte** c = &RGBA[i];
+
+				switch (mask[i]) {
+					case SI_SWIZZLE_VAL_1: *c = &ONE; break;
+					case SI_SWIZZLE_VAL_0: *c = &ZERO; break;
+					case SI_SWIZZLE_VAL_R: {
+						*c = &buffer[2 * (channels != 1)];
+						inc.a[i] = channels;
+						break;
+					}
+					case SI_SWIZZLE_VAL_G: {
+						*c = &buffer[2 * (channels != 1)];
+						inc.a[i] = channels;
+						break;
+					}
+					case SI_SWIZZLE_VAL_B: {
+						*c = &buffer[0];
+						inc.a[i] = channels;
+						break;
+					}
+					case SI_SWIZZLE_VAL_A: {
+						*c = (channels == 4) ? &buffer[3] : &ONE;
+						inc.a[i] = channels;
+						break;
+					}
+				}
+			}
+
+			siColor* atlasBuf = atlas->texID.cpu->data;
+			i32 y2 = XY.y + sheet.spriteSize.height;
+
+			for_range (y, XY.y, y2) {
+				usize index = y * atlas->totalWidth + XY.x;
+				for_range (x, 0, sheet.spriteSize.width) {
+					siColor clr;
+					clr = SI_RGBA(RGBA[0][offset.c.r], RGBA[1][offset.c.g], RGBA[2][offset.c.b], RGBA[3][offset.c.a]);
+					atlasBuf[index] = clr;
+					index += 1;
+
+					offset.s =_mm_add_epi32(offset.s, inc.s);
+				}
+			}
+#else
+			const siByte* buffer = data;
+
+			siColor* atlasBuf = atlas->texID.cpu->data;
+			i32 y2 = XY.y + sheet.spriteSize.height;
+
+			for_range (y, XY.y, y2) {
+				usize index = y * atlas->totalWidth + XY.x;
+				for_range (x, 0, sheet.spriteSize.width) {
+					siColor clr;
+					switch (channels) {
+						case 1:
+							clr = SI_RGBA(*buffer, *buffer, *buffer, *buffer);
+							buffer += 1;
+							break;
+						case 3:
+							clr = SI_RGB(buffer[2], buffer[1], buffer[0]);
+							buffer += 3;
+							break;
+						case 4:
+							clr = SI_RGBA(buffer[2], buffer[1], buffer[0], buffer[3]);
+							buffer += 4;
+							break;
+						default: SI_PANIC();
+					}
+					atlasBuf[index] = clr;
+					index += 1;
+				}
+			}
+#endif
 			break;
 		}
 	}
@@ -3925,37 +4228,43 @@ siFont siapp_fontLoadEx(const siWindow* win, cstring path, i32 size, siGlyphSet*
 		arrayLen += 1;
 	}
 
-	siAllocator* alloc = si_allocatorMake(sizeof(siTextureAtlas) + charCount * sizeof(siGlyphInfo) + arrayLen * sizeof(siGlyphSetANDNIndex));
+	siAllocator* alloc = si_allocatorMake(
+		sizeof(siTextureAtlas) +
+		2 * sizeof(siArrayHeader) +
+		charCount * sizeof(siGlyphInfo) +
+		arrayLen * sizeof(siGlyphSetANDNIndex)
+	);
 	font.alloc = alloc;
 	{
+		isize maxBufSize = size * size * charCount; /* NOTE(EimaMei): How many pixels are required minimum.*/
 		isize texSize = 128;
 		while (true) {
-			isize res = (charCount / (texSize / (f32)size)) * size;
+			isize res = maxBufSize / texSize;
 			SI_STOPIF(res <= texSize, break);
-			texSize *= 2;
+			texSize *= 2; /* NOTE(EimaMei): We raise by the power of two for an optimal spritesheet. */
 		}
 
-		// TODO(EimaMei): Merge.
 		siTextureAtlas* atlas = si_mallocItem(alloc, siTextureAtlas);
 		*atlas = siapp_textureAtlasMake(win, SI_AREA(texSize, texSize), 1, SI_RESIZE_DEFAULT);
 		font.sheet = siapp_spriteSheetLoadEx(atlas, nil, texSize, texSize, 4, SI_AREA(size, size));
 
-		siapp_textureSwizzleMask(
+		siapp_textureAtlasSwizzleMaskSet(
 			*atlas, SI_SWIZZLE_RGBA,
 			si_buf(i32, SI_SWIZZLE_VAL_1, SI_SWIZZLE_VAL_1, SI_SWIZZLE_VAL_1, SI_SWIZZLE_VAL_R)
 		);
 	}
 	font.sets = si_arrayMakeReserve(alloc, sizeof(siGlyphSetANDNIndex), arrayLen);
+	SI_ARRAY_HEADER(font.sets)->len = arrayLen;
+
 	font.glyphs = si_arrayMakeReserve(alloc, sizeof(siGlyphInfo), charCount);
 	SI_ARRAY_HEADER(font.glyphs)->len = charCount;
-	SI_ARRAY_HEADER(font.sets)->len = arrayLen;
 
 	siByte* tmpBuf = si_mallocArray(tmpAlloc, siByte, size * size);
 	{
 		font.scale = stbtt_ScaleForPixelHeight(&font.stbtt, size);
 		font.advance.space = font.size / 3.45f;
 		font.advance.tab = font.size / 1.15f;
-		font.advance.newline = (font.size + font.size * 0.25f) / 1.15f;
+		font.advance.newline = (font.size * 1.25f) / 1.15f;
 	}
 
 	usize indexCount = 0;
@@ -4006,10 +4315,6 @@ siFont siapp_fontLoadEx(const siWindow* win, cstring path, i32 size, siGlyphSet*
 		}
 	}
 	font.unknownSymbolIndex = siapp_fontGlyphFind(&font, '?') - font.glyphs;
-	if (extraChars == 0 ) {
-		si_arrayShrinkToFit(&font.glyphs);
-	}
-
 	si_allocatorFree(tmpAlloc);
 
 	return font;
@@ -4304,7 +4609,7 @@ void siapp_windowBackgroundSet(siWindow* win, siColor color) {
 			bg->y = color.g / 255.0f;
 			bg->z = color.b / 255.0f;
 			bg->w = color.a / 255.0f;
-			return ;
+			break;
 		}
 		case SI_RENDERING_CPU: {
 #if defined(SIAPP_PLATFORM_API_X11)
@@ -4387,7 +4692,7 @@ void siapp_drawRectF(siWindow* win, siVec4 rect, siColor color) {
 	switch (win->renderType & SI_RENDERING_BITS) {
 		case SI_RENDERING_OPENGL: {
 			siWinRenderingCtxOpenGL* gl = &win->render.opengl;
-			SI_STOPIF(gl->vertexCounter + 4 > gl->maxVertexCount, siapp_windowRender(win));
+			SI_STOPIF(gl->vertexCounter + 4 > gl->maxVertexCount, si_printf("dd\n"); siapp_windowRender(win));
 
 			f32 x1 = i32ToNDCX(rect.x, gl->size.width); // TODO(EimaMei): Optimize i32ToNDCX. SIMD MAYBE?
 			f32 y1 = i32ToNDCY(rect.y, gl->size.height);
@@ -4408,7 +4713,14 @@ void siapp_drawRectF(siWindow* win, siVec4 rect, siColor color) {
 
 		case SI_RENDERING_CPU: {
 			siWinRenderingCtxCPU* cpu = &win->render.cpu;
-			siRect r = SI_RECT(rect.x, rect.y, rect.z, rect.w);
+
+			siVec2 scale = win->scaleFactor;
+			siRect r = SI_RECT(
+				rect.x * scale.x,
+				rect.y * scale.y,
+				rect.z * scale.x,
+				rect.w * scale.y
+			);
 
 			f32 alpha = color.a / 255.0f;
 			color.r *= alpha;
@@ -4449,7 +4761,7 @@ void siapp_drawImage(siWindow* win, siRect rect, siImage img) {
 
 #define siapp_cpuBufferSetPixelFromImg(cpu, INDEX, imgIndex, tint) \
 	do { \
-		siColor color = atlas->texID.cpu[imgIndex]; \
+		siColor color = ((siColor*)atlas->texID.cpu->data)[imgIndex]; \
 		f32 alpha = (color.a / 255.0f) * tint.w; \
 		color.r *= alpha * tint.x; \
 		color.g *= alpha * tint.y; \
@@ -4470,12 +4782,12 @@ F_TRAITS(inline intern)
 void siapp__cpuDrawImage(siWinRenderingCtxCPU* cpu, siPoint pos, siImage* img,
 		siVec4 tint) {
 	siTextureAtlas* atlas = img->atlas;
-	usize imgX = img->x1;
-	usize imgY = img->y1;
+	usize imgX = img->pos.cpu.x1;
+	usize imgY = img->pos.cpu.y1;
 
 	for_range (y, pos.y, pos.y + img->size.height) {
-		usize index = y * (SI__CHANNEL_COUNT * cpu->size.width) + pos.x * SI__CHANNEL_COUNT,
-			  imgIndex = imgY * atlas->totalWidth + imgX;
+		usize index = y * (SI__CHANNEL_COUNT * cpu->size.width) + pos.x * SI__CHANNEL_COUNT;
+		usize imgIndex = imgY * atlas->totalWidth + imgX;
 		for_range (x, pos.x, pos.x + img->size.width) {
 			siapp_cpuBufferSetPixelFromImg(cpu, index, imgIndex, tint);
 
@@ -4494,24 +4806,94 @@ void siapp__cpuDrawImageNearest(siWinRenderingCtxCPU* cpu, siRect r, siImage* im
 
     f32 scaleW = img->size.width / (f32)r.width;
     f32 scaleH = img->size.height / (f32)r.height;
-	f32 imgY = img->y1;
+	f32 imgY = img->pos.cpu.y1;
 
 
 	for_range (y, r.y, r.y + r.height) {
 		usize index = y * (SI__CHANNEL_COUNT * cpu->size.width) + r.x * SI__CHANNEL_COUNT;
 		usize imgIndexY = (i32)imgY * atlas->totalWidth;
-		f32 imgIndexX = img->x1;
+		f32 imgIndexX = img->pos.cpu.x1;
 
 		for_range (x, r.x, r.x + r.width) {
-			siapp_cpuBufferSetPixelFromImg(cpu, index, (usize)(imgIndexY + imgIndexX), tint);
+                  do {
+                    siColor color =
+                        ((siColor *)atlas->texID.cpu
+                             ->data)[(usize)(imgIndexY + imgIndexX)];
+                    f32 alpha = (color.a / 255.0f) * tint.w;
+                    color.r *= alpha * tint.x;
+                    color.g *= alpha * tint.y;
+                    color.b *= alpha * tint.z;
+                    alpha = 1.0f - alpha;
+                    cpu->buffer[index + 0] *= alpha;
+                    cpu->buffer[index + 1] *= alpha;
+                    cpu->buffer[index + 2] *= alpha;
+                    cpu->buffer[index + 0] += color.b;
+                    cpu->buffer[index + 1] += color.g;
+                    cpu->buffer[index + 2] += color.r;
+                  } while (0);
 
-			index += SI__CHANNEL_COUNT;
+                        index += SI__CHANNEL_COUNT;
 			imgIndexX += scaleW;
 		}
 		imgY += scaleH;
 	}
 }
 
+F_TRAITS(inline intern)
+void siapp__cpuDrawImageLinear(siWinRenderingCtxCPU* cpu, siRect r, siImage* img,
+                                 siVec4 tint) {
+    siTextureAtlas* atlas = img->atlas;
+
+    f32 scaleW = (img->size.width - 1) / (f32)r.width;
+    f32 scaleH = (img->size.height - 1) / (f32)r.height;
+    f32 imgY = img->pos.cpu.y1;
+
+    for_range (y, r.y, r.y + r.height) {
+        usize index = y * (SI__CHANNEL_COUNT * cpu->size.width) + r.x * SI__CHANNEL_COUNT;
+        f32 imgIndexX = img->pos.cpu.x1;
+
+        for_range (x, r.x, r.x + r.width) {
+            i32 x0 = (i32)imgIndexX;
+            i32 y0 = (i32)imgY * atlas->totalWidth;
+            i32 x1 = x0 + 1;
+            i32 y1 = y0 + atlas->totalWidth;
+
+
+			f32 dx = imgIndexX - x0;
+            f32 dy = imgY - (i32)imgY;
+			f32 dx2 = 1 - dx;
+			f32 dy2 = 1 - dy;
+
+            siColor c00 = atlas->texID.cpu->data[y0 + x0];
+            siColor c10 = atlas->texID.cpu->data[y0 + x1];
+            siColor c01 = atlas->texID.cpu->data[y1 + x0];
+            siColor c11 = atlas->texID.cpu->data[y1 + x1];
+
+            siColor color;
+            color.r = c00.r * dx2 * dy2 + c10.r * dx * dy2 + c01.r * dx2 * dy + c11.r * dx * dy;
+            color.g = c00.g * dx2 * dy2 + c10.g * dx * dy2 + c01.g * dx2 * dy + c11.g * dx * dy;
+            color.b = c00.b * dx2 * dy2 + c10.b * dx * dy2 + c01.b * dx2 * dy + c11.b * dx * dy;
+            color.a = c00.a * dx2 * dy2 + c10.a * dx * dy2 + c01.a * dx2 * dy + c11.a * dx * dy;
+
+            f32 alpha = (color.a / 255.0f) * tint.w;
+            color.r *= alpha * tint.x;
+            color.g *= alpha * tint.y;
+            color.b *= alpha * tint.z;
+
+            alpha = 1.0f - alpha;
+            cpu->buffer[index + 0] *= alpha;
+            cpu->buffer[index + 1] *= alpha;
+            cpu->buffer[index + 2] *= alpha;
+            cpu->buffer[index + 0] += color.b;
+            cpu->buffer[index + 1] += color.g;
+            cpu->buffer[index + 2] += color.r;
+
+            index += SI__CHANNEL_COUNT;
+            imgIndexX += scaleW;
+        }
+        imgY += scaleH;
+    }
+}
 
 void siapp_drawImageF(siWindow* win, siVec4 rect, siImage img) {
 	SI_ASSERT_NOT_NULL(win);
@@ -4526,41 +4908,51 @@ void siapp_drawImageF(siWindow* win, siVec4 rect, siImage img) {
 			f32 x2 = i32ToNDCX(rect.x + rect.z, gl->size.width);
 			f32 y2 = i32ToNDCY(rect.y + rect.w, gl->size.height);
 
+			siCoordsF32 tex = img.pos.gpu;
 			siapp_colorVec4f(win, win->imageColor);
-			gl->curTex = &img;
 
-			siapp_texCoords2f(win, img.x1, img.y1); siapp_drawVertex2f(win, x1, y1);
-			siapp_texCoords2f(win, img.x2, img.y1); siapp_drawVertex2f(win, x2, y1);
-			siapp_texCoords2f(win, img.x2, img.y2); siapp_drawVertex2f(win, x2, y2);
-			siapp_texCoords2f(win, img.x1, img.y2); siapp_drawVertex2f(win, x1, y2);
+			siapp_texCoords2f(win, tex.x1, tex.y1); siapp_drawVertex2f(win, x1, y1);
+			siapp_texCoords2f(win, tex.x2, tex.y1); siapp_drawVertex2f(win, x2, y1);
+			siapp_texCoords2f(win, tex.x2, tex.y2); siapp_drawVertex2f(win, x2, y2);
+			siapp_texCoords2f(win, tex.x1, tex.y2); siapp_drawVertex2f(win, x1, y2);
 			siapp_texCoords2f(win, 0, 0);
 
-			gl->curTex = &gl->defaultTex;
-
+			gl->curTex = &img;
 			siapp__addVertexesToCMD(gl, 6, 4);
+			gl->curTex = &gl->defaultTex;
 			break;
 		}
 		case SI_RENDERING_CPU: {
 			siWinRenderingCtxCPU* cpu = &win->render.cpu;
 
-			siArea pos = SI_AREA(rect.z, rect.w);
-			if (si_pointCmp(pos, img.size)) {
-				siapp__cpuDrawImage(cpu, SI_POINT(si_round(rect.x), si_round(rect.y)), &img, win->imageColor);
+			siVec2 scale = win->scaleFactor;
+			siArea size = SI_AREA(rect.z * scale.x, rect.w * scale.y);
+			rect.x *= scale.x;
+			rect.y *= scale.y;
+
+			if (si_pointCmp(size, img.size)) {
+				siapp__cpuDrawImage(cpu, SI_POINT(rect.x, rect.y), &img, win->imageColor);
 				break;
 			}
 
-			switch (img.atlas->resizeMethod) {
+			switch (img.atlas->texID.cpu->resizeMethod) {
 				case SI_RESIZE_NEAREST: {
 					siapp__cpuDrawImageNearest(
 						cpu,
-						SI_RECT(si_round(rect.x), si_round(rect.y), si_round(rect.z), si_round(rect.w)),
+						SI_RECT_A(rect.x, rect.y, size),
 						&img,
 						win->imageColor
 					);
-
 					break;
 				}
+
 				case SI_RESIZE_LINEAR: {
+					siapp__cpuDrawImageLinear(
+						cpu,
+						SI_RECT_A(rect.x, rect.y, size),
+						&img,
+						win->imageColor
+					);
 					break;
 				}
 			}
@@ -4606,8 +4998,9 @@ void siapp_drawTriangleRight(siWindow* win, siPoint start, f32 hypotenuse,
 	SI_ASSERT_NOT_NULL(win);
 	SI_ASSERT(hypotenuse > 0);
 
-	f32 x1 = hypotenuse * si_cos(SI_TO_RADIANS(startingAngle)),
-		y1 = hypotenuse * si_sin(SI_TO_RADIANS(startingAngle));
+	f32 alpha = SI_TO_RADIANS(startingAngle);
+	f32 x1 = hypotenuse * si_cos(alpha),
+		y1 = hypotenuse * si_sin(alpha);
 
 	siTriangleF t = SI_TRIANGLE_F(
 		SI_VEC2(start.x, start.y),
@@ -4623,9 +5016,9 @@ void siapp_drawTriangleIsosceles(siWindow* win, siPoint start, f32 length,
 	SI_ASSERT(length > 0);
 	SI_ASSERT(startingAngle < 180);
 
-	f32 angleAlpha = (180 - startingAngle) / 2;
-	f32 x = length * si_cos(SI_TO_RADIANS(angleAlpha)),
-		y = length * si_sin(SI_TO_RADIANS(angleAlpha));
+	f32 alpha = SI_TO_RADIANS((180 - startingAngle) / 2);
+	f32 x = length * si_cos(alpha),
+		y = length * si_sin(alpha);
 
 	siTriangleF t = SI_TRIANGLE_F(
 		SI_VEC2(start.x + x, start.y),
@@ -4696,17 +5089,8 @@ void siapp_drawPolygonF(siWindow* win, siVec4 rect, u32 sides, siColor color) {
 	siapp__addVertexesToCMD(gl, sides + half, sides);
 }
 
-F_TRAITS(inline)
 void siapp_drawText(siWindow* win, siText text, siPoint pos, u32 size) {
 	siapp_drawTextF(win, text, SI_VEC2(pos.x, pos.y), size);
-}
-F_TRAITS(inline)
-void siapp_drawTextItalic(siWindow* win, siText text, siPoint pos, u32 size) {
-	siapp_drawTextItalicF(win, text, SI_VEC2(pos.x, pos.y), size);
-}
-F_TRAITS(inline)
-siVec2 siapp_drawTextFmt(siWindow* win, siText text, siPoint pos, u32 size) {
-	return siapp_drawTextFmtF(win, text, SI_VEC2(pos.x, pos.y), size);
 }
 void siapp_drawTextF(siWindow* win, siText text, siVec2 pos, u32 size) {
 	SI_ASSERT_NOT_NULL(win);
@@ -4735,7 +5119,7 @@ void siapp_drawTextF(siWindow* win, siText text, siVec2 pos, u32 size) {
 				case '\r': {
 					SI_STOPIF((usize)i + 1 <= text.len && -text.chars[i + 1] == '\n', continue);
 					base.x = pos.x;
-					base.y += size + size * 0.25f;
+					base.y += size * 1.25f;
 					continue;
 				}
 				default: {
@@ -4749,215 +5133,98 @@ void siapp_drawTextF(siWindow* win, siText text, siVec2 pos, u32 size) {
 		base.x += advance;
 	}
 }
-void siapp_drawTextItalicF(siWindow* win, siText text, siVec2 pos, u32 size) {
-	SI_ASSERT_NOT_NULL(win);
-
-	f32 scaleFactor = (f32)size / text.font->size * 1.15;
-	siVec2 base = pos;
-
-	for_range (i, 0, text.len) {
-		i32 realIndex = text.chars[i];
-
-		if (realIndex < 0) { // TODO(EimaMei): Benchmark is a benchless verion is faster.
-			switch (-realIndex) {
-				case ' ': {
-					base.x += text.font->advance.space * scaleFactor;
-					continue;
-				}
-				case '\t': {
-					base.x += text.font->advance.tab * scaleFactor;
-					continue;
-				}
-				case '\n': {
-					base.x = pos.x;
-					base.y += text.font->advance.newline * scaleFactor;
-					continue;
-				}
-				case '\r': {
-					SI_STOPIF((usize)i + 1 <= text.len && -text.chars[i + 1] == '\n', continue);
-					base.x = pos.x;
-					base.y += size + size * 0.25f;
-					continue;
-				}
-				default: {
-					realIndex = text.font->unknownSymbolIndex;
-				}
-			}
-		}
-
-		siGlyphInfo* glyph = &text.font->glyphs[realIndex];
-		f32 advance = siapp_drawCharacterItalicScale(win, text.font, glyph, base, size, scaleFactor);
-		base.x += advance;
-	}
-}
-siVec2 siapp_drawTextFmtF(siWindow* win, siText text, siVec2 pos, u32 size) {
-	SI_ASSERT_NOT_NULL(win);
-
-	f32 scaleFactor = (f32)size / text.font->size * 1.15;
-	siVec2 base = pos;
-	f32 maxWidth = 0;
-
-	b32 italic = false;
-	b32 underline = false;
-	siVec2 underlinePos = {0};
-
-	for_range (i, 0, text.len) {
-		i32 realIndex = text.chars[i];
-
-		if (realIndex < 0) { // TODO(EimaMei): Benchmark is a benchless verion is faster.
-			switch (-realIndex) {
-				case ' ': {
-					base.x += text.font->advance.space * scaleFactor;
-					f32 curWidth = 0;
-					for_range (x, i + 1, text.len) {
-						SI_STOPIF(text.chars[x] < 0, break);
-						f32 advanceX = siapp_textAdvanceXGet(text, x);
-						curWidth += advanceX * scaleFactor;
-					}
-
-					if (base.x + curWidth > win->e.windowSizeScaled.width) {
-						maxWidth = base.x;
-						base.x = pos.x;
-						base.y += text.font->advance.newline * scaleFactor;
-					}
-					continue;
-				}
-				case '\t': {
-					base.x += text.font->advance.newline * scaleFactor;
-					continue;
-				}
-				case '\r':
-				case '\n': {
-					base.x = pos.x;
-					base.y += text.font->advance.newline * scaleFactor;
-					continue;
-				}
-
-				case '*' : {
-					italic = !italic;
-					continue;
-				}
-				case '_': {
-					if (underline == false) {
-						underline = true;
-						underlinePos = base;
-					}
-					else {
-						underline = false;
-						siVec2 start = underlinePos;
-						siapp_drawRectF(
-							win,
-							SI_VEC4(start.x, start.y + size + size * 0.15, base.x - start.x, size / 16.0f * 1.15f),
-							SI_RGB(255, 255, 255)
-						);
-					}
-					continue;
-				}
-				default: {
-					realIndex = text.font->unknownSymbolIndex;
-				}
-			}
-		}
-
-		siGlyphInfo* glyph = &text.font->glyphs[realIndex];
-		f32 advance = (!italic)
-			? siapp_drawCharacterScale(win, text.font, glyph, base, size, scaleFactor)
-			: siapp_drawCharacterItalicScale(win, text.font, glyph, base, size, scaleFactor);
-
-		base.x += advance;
-	}
-	return SI_VEC2(maxWidth, base.y - pos.y + size);
-}
-
 f32 siapp_drawCharacterScale(siWindow* win, const siFont* font, const siGlyphInfo* character,
 		siVec2 pos, u32 size, f32 scaleFactor) {
 	SI_ASSERT_NOT_NULL(win);
-
-	siWinRenderingCtxOpenGL* gl = &win->render.opengl;
-	SI_STOPIF(gl->vertexCounter + 4 > gl->maxVertexCount, siapp_windowRender(win));
-
 	const siGlyphInfo* glyph = character;
-	siImage img = siapp_spriteSheetSpriteGet(font->sheet, glyph->texID);
 
-	img.x2 = img.x1 + (glyph->width / img.atlas->totalWidth);
-	img.y2 = img.y1 + (glyph->height / img.atlas->texHeight);
+	switch (win->renderType & SI_RENDERING_BITS) {
+		case SI_RENDERING_OPENGL: {
+			siWinRenderingCtxOpenGL* gl = &win->render.opengl;
+			SI_STOPIF(gl->vertexCounter + 4 > gl->maxVertexCount, siapp_windowRender(win));
 
-	f32 x = glyph->x * scaleFactor;
-	f32 y = glyph->y * scaleFactor;
-	f32 width = glyph->width * scaleFactor;
-	f32 height = glyph->height * scaleFactor;
+			siImage img = siapp_spriteSheetSpriteGet(font->sheet, glyph->texID);
+			siCoordsF32 tex = img.pos.gpu;
 
-	f32 baseX = pos.x + x,
-		baseY = pos.y + y + size;
+			// TODO(EimaMei): Make this slightly faster. | SET
+			tex.x2 = tex.x1 + (glyph->width / img.atlas->totalWidth);
+			tex.y2 = tex.y1 + (glyph->height / img.atlas->texHeight);
 
-	f32 x1 = i32ToNDCX(baseX, gl->size.width);
-	f32 x2 = i32ToNDCX(baseX + width, gl->size.width);
-	f32 y1 = i32ToNDCY(baseY, gl->size.height);
-	f32 y2 = i32ToNDCY(baseY + height, gl->size.height);
+			f32 x = glyph->x * scaleFactor;
+			f32 y = glyph->y * scaleFactor;
+			f32 width = glyph->width * scaleFactor;
+			f32 height = glyph->height * scaleFactor;
 
-	{
-		siVec4 clr = win->textColor.vec4;
-		siapp_color4f(win, clr.x, clr.y, clr.z, clr.w);
-		gl->curTex = &img;
+			f32 baseX = pos.x + x,
+				baseY = pos.y + y + size;
 
-		siapp_texCoords2f(win, img.x1, img.y1); siapp_drawVertex2f(win, x1, y1);
-		siapp_texCoords2f(win, img.x2, img.y1); siapp_drawVertex2f(win, x2, y1);
-		siapp_texCoords2f(win, img.x2, img.y2); siapp_drawVertex2f(win, x2, y2);
-		siapp_texCoords2f(win, img.x1, img.y2); siapp_drawVertex2f(win, x1, y2);
-		siapp_texCoords2f(win, 0, 0);
+			f32 x1 = i32ToNDCX(baseX, gl->size.width);
+			f32 x2 = i32ToNDCX(baseX + width, gl->size.width);
+			f32 y1 = i32ToNDCY(baseY, gl->size.height);
+			f32 y2 = i32ToNDCY(baseY + height, gl->size.height);
 
-		siapp__addVertexesToCMD(gl, 6, 4);
-		gl->curTex = &gl->defaultTex;
+			{
+				siVec4 clr = win->textColor;
+				siapp_color4f(win, clr.x, clr.y, clr.z, clr.w);
+
+				siapp_texCoords2f(win, tex.x1, tex.y1); siapp_drawVertex2f(win, x1, y1);
+				siapp_texCoords2f(win, tex.x2, tex.y1); siapp_drawVertex2f(win, x2, y1);
+				siapp_texCoords2f(win, tex.x2, tex.y2); siapp_drawVertex2f(win, x2, y2);
+				siapp_texCoords2f(win, tex.x1, tex.y2); siapp_drawVertex2f(win, x1, y2);
+				siapp_texCoords2f(win, 0, 0);
+
+				gl->curTex = &img;
+				siapp__addVertexesToCMD(gl, 6, 4);
+				gl->curTex = &gl->defaultTex;
+			}
+			break;
+		}
+		case SI_RENDERING_CPU: {
+			siWinRenderingCtxCPU* cpu = &win->render.cpu;
+
+			siImage img = siapp_spriteSheetSpriteGet(font->sheet, glyph->texID);
+			img.size = SI_AREA(glyph->width, glyph->height);
+
+			siVec2 scale = win->scaleFactor;
+			siRect r = SI_RECT(
+				(pos.x + glyph->x * scaleFactor) * scale.x,
+				(pos.y + size + glyph->y * scaleFactor) * scale.y,
+				glyph->width * scaleFactor * scale.x,
+				glyph->height * scaleFactor * scale.y
+			);
+			size *= scaleFactor;
+
+			if (size == font->size && scale.x == 1 && scale.y == 1) {
+				siapp__cpuDrawImage(cpu, SI_POINT(r.x, r.y), &img, win->textColor);
+				break;
+			}
+
+			switch (img.atlas->texID.cpu->resizeMethod) {
+				case SI_RESIZE_NEAREST: {
+					siapp__cpuDrawImageNearest(
+						cpu,
+						r,
+						&img,
+						win->textColor
+					);
+					break;
+				}
+
+				case SI_RESIZE_LINEAR: {
+					siapp__cpuDrawImageLinear(
+						cpu,
+						r,
+						&img,
+						win->textColor
+					);
+					break;
+				}
+			}
+			break;
+		}
 	}
 
 	return glyph->advanceX * scaleFactor;
-}
-f32 siapp_drawCharacterItalicScale(siWindow* win, const siFont* font, const siGlyphInfo* character,
-		siVec2 pos, u32 size, f32 scaleFactor) {
-	SI_ASSERT_NOT_NULL(win);
-	siWinRenderingCtxOpenGL* gl = &win->render.opengl;
-	SI_STOPIF(gl->vertexCounter + 4 > gl->maxVertexCount, siapp_windowRender(win));
-
-	const siGlyphInfo* glyph = character;
-	siImage img = siapp_spriteSheetSpriteGet(font->sheet, glyph->texID);
-
-	img.x2 = img.x1 + (glyph->width / img.atlas->totalWidth);
-	img.y2 = img.y1 + (glyph->height / img.atlas->texHeight);
-
-	f32 x = glyph->x * scaleFactor;
-	f32 y = glyph->y * scaleFactor;
-	f32 width = glyph->width * scaleFactor;
-	f32 height = glyph->height * scaleFactor;
-
-	f32 baseX = pos.x + x,
-		baseY = pos.y + y + size;
-
-	f32 shift = height * si_sin(SI_TO_RADIANS(14));
-
-	f32 x1 = i32ToNDCX(baseX + shift, gl->size.width);
-	f32 x2 = i32ToNDCX(baseX + shift + width, gl->size.width);
-	f32 x3 = i32ToNDCX(baseX +  width, gl->size.width);
-	f32 x4 = i32ToNDCX(baseX, gl->size.width);
-
-	f32 y1 = i32ToNDCY(baseY, gl->size.height);
-	f32 y2 = i32ToNDCY(baseY + height, gl->size.height);
-
-	{
-		siVec4 clr = win->textColor.vec4;
-		siapp_color4f(win, clr.x, clr.y, clr.z, clr.w);
-		gl->curTex = &img;
-
-		siapp_texCoords2f(win, img.x1, img.y1); siapp_drawVertex2f(win, x1, y1);
-		siapp_texCoords2f(win, img.x2, img.y1); siapp_drawVertex2f(win, x2, y1);
-		siapp_texCoords2f(win, img.x2, img.y2); siapp_drawVertex2f(win, x3, y2);
-		siapp_texCoords2f(win, img.x1, img.y2); siapp_drawVertex2f(win, x4, y2);
-		siapp_texCoords2f(win, 0, 0);
-
-		siapp__addVertexesToCMD(gl, 6, 4);
-		gl->curTex = &gl->defaultTex;
-	}
-
-	return (glyph->advanceX + shift) * scaleFactor;
 }
 
 F_TRAITS(inline)
@@ -5008,6 +5275,7 @@ b32 siapp_windowRendererMake(siWindow* win, siRenderingType renderType,
 		}
 	}
 	siapp_windowVSyncSet(win, true);
+	siapp_windowClear(win);
 
 	return res;
 }
@@ -5021,13 +5289,13 @@ b32 siapp_windowRendererChange(siWindow* win, u32 newRenderType) {
 	siArea maxTexRes = SI_AREA(win->atlas.texWidth, win->atlas.texHeight);
 	u32 maxTexCount = win->atlas.totalWidth / win->atlas.texWidth;
 	siColor bgClr = siapp_windowBackgroundGet(win);
-	siTextureResizeEnum resize = win->atlas.resizeMethod;
-
+	//siTextureResizeEnum resize = win->atlas.resizeMethod;
+	// TODO(EimaMei): Fix this
 	siapp_windowRendererDestroy(win);
 
 	siapp_windowRendererMake(win, newRenderType, maxDrawCount, maxTexRes, maxTexCount);
 	siapp_windowBackgroundSet(win, bgClr);
-	siapp_textureResizeMethodChange(&win->atlas, resize);
+	//siapp_textureAtlasResizeMethodSet(&win->atlas, resize);
 
 	return true;
 }
@@ -5213,26 +5481,19 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 		NSOpenGLPFAAlphaSize, 8,
 		NSOpenGLPFADepthSize, 24,
 		NSOpenGLPFAStencilSize, 8,
-		NSOpenGLPFAOpenGLProfile, NSOpenGLProfileVersion3_2Core,
+		NSOpenGLPFAOpenGLProfile, NSOpenGLProfileVersion4_1Core,
 		0,
 	};
 	NSOpenGLPixelFormat* format = NSOpenGLPixelFormat_initWithAttributes(defaultAttribs);
-	NSOpenGLView* view = NSOpenGLView_initWithFrame(NSMakeRect(0, 0, gl->size.width, gl->size.height), format);
-	NSOpenGLView_prepareOpenGL(view);
-
-	NSOpenGLContext* context = NSOpenGLView_openGLContext(view);
+	NSOpenGLContext* context = NSOpenGLContext_initWithFormat(format, nil);
+	NSOpenGLContext_setView(context, NSWindow_contentView(win->hwnd));
+	NSView_setLayerContentsPlacement(NSOpenGLContext_view(context), NSViewLayerContentsPlacementTopLeft);
 	NSOpenGLContext_makeCurrentContext(context);
-	NSView_addSubview(NSWindow_contentView(win->hwnd), (NSView*)view);
-
-	CVDisplayLinkRef displayLink;
-	CGDirectDisplayID displayID = CGMainDisplayID();
-	CVDisplayLinkCreateWithCGDisplay(displayID, &displayLink);
-	CVDisplayLinkSetOutputCallback(displayLink, displayCallback, win);
-	CVDisplayLinkStart(displayLink);
 
 	gl->context = context;
-	gl->displayLink = displayLink;
 	glInfo.context = context;
+
+	release(format);
 #endif
 
 	if (glInfo.isLoaded == false) {
@@ -5298,9 +5559,9 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 	{
 		i32 vertexShader;
 		{
-			char updatedVShader[sizeof(defaultVShaderCode) + 20];
-			si_snprintf(updatedVShader, countof(updatedVShader), defaultVShaderCode, maxDrawCount);
-			vertexShader = si_OpenGLShaderMake(GL_VERTEX_SHADER, updatedVShader);
+			char VSHADER[sizeof(VSHADER_DEFAULT) + 20];
+			si_snprintf(VSHADER, countof(VSHADER), VSHADER_DEFAULT, maxDrawCount);
+			vertexShader = si_OpenGLShaderMake(GL_VERTEX_SHADER, VSHADER);
 		}
 
 		i32 fragmentShader;
@@ -5340,7 +5601,6 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 		glDeleteShader(fragmentShader);
 	}
 
-	glUseProgram(gl->programID);
 
 	glBindAttribLocation(gl->programID, SI_SHADER_POS, "pos");
 	glBindAttribLocation(gl->programID, SI_SHADER_TEX, "tex");
@@ -5401,11 +5661,13 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 	glVertexAttribIPointer(SI_SHADER_ID, 2, GL_UNSIGNED_INT, 0, 0);
 	glEnableVertexAttribArray(SI_SHADER_ID);
 	glVertexAttribDivisor(SI_SHADER_ID, 1);
+	RGL_opengl_getError();
 
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl->VBOs[SI_VBO_ELM]);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(siOpenGLIndices) * maxDrawCount, indices, GL_STATIC_DRAW);
 	si_allocatorFree(indicesAlloc);
 
+	glUseProgram(gl->programID);
 	gl->uniformTexture = glGetUniformLocation(gl->programID, "textures");
 	gl->uniformMvp = glGetUniformLocation(gl->programID, "mvp");
 	glUniformMatrix4fv(gl->uniformMvp, maxDrawCount, GL_FALSE, gl->matrices->m);
@@ -5418,11 +5680,11 @@ GL_init_section:
 	gl->gradientLen = 0;
 	gl->maxVertexCount = maxDrawCount * 4;
 
-
 	win->atlas = siapp_textureAtlasMake(win, maxTexRes, maxTexCount, SI_RESIZE_DEFAULT);
 	gl->defaultTex = siapp_imageLoadEx(&win->atlas, si_buf(siByte, 255, 255, 255, 255), 1, 1, 4);
 	gl->curTex = &gl->defaultTex;
 
+	siapp__resizeWindow(win, gl->size.width, gl->size.height);
 	return true;
 }
 void siapp_windowOpenGLRender(siWindow* win) {
@@ -5430,6 +5692,7 @@ void siapp_windowOpenGLRender(siWindow* win) {
 
 	siWinRenderingCtxOpenGL* gl = &win->render.opengl;
 	siapp_OpenGLCurrentContextSet(win);
+
 
 	switch (win->renderType & SI_RENDERING_OPENGL_BITS) {
 		case SI_RENDERINGVER_OPENGL_LEGACY: {
@@ -5466,18 +5729,17 @@ void siapp_windowOpenGLRender(siWindow* win) {
 
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl->VBOs[SI_VBO_ELM]);
 
-	u32 count = 0;
 	for_range (i, 0, gl->drawCounter) {
         const siOpenGLDrawCMD* cmd = &gl->CMDs[i];
 
-		glDrawElementsInstanced(
+		glDrawElementsInstancedBaseVertex(
 			GL_TRIANGLE_FAN,
 			cmd->count,
 			GL_UNSIGNED_SHORT,
-            (siByte*)((count + cmd->firstIndex) * sizeof(u16)),
-            cmd->instanceCount
+            (siByte*)((cmd->firstIndex) * sizeof(u16)),
+            cmd->instanceCount,
+			cmd->baseVertex
 		);
-		count += cmd->count;
 	}
 	glFinish();
 	gl->vertexCounter = 0;
@@ -5519,9 +5781,7 @@ void siapp_windowOpenGLDestroy(siWindow* win) {
 #elif defined(SIAPP_PLATFORM_API_X11)
 	glXDestroyContext(win->display, gl->context);
 #elif defined(SIAPP_PLATFORM_API_COCOA)
-	CVDisplayLinkStop(gl->displayLink);
-	CVDisplayLinkRelease(gl->displayLink);
-	release(NSWindow_contentView(win->hwnd));
+	release(gl->context);
 #endif
 }
 
@@ -5564,7 +5824,7 @@ b32 siapp_windowCPUInit(siWindow* win, u32 maxTexCount, siArea maxTexRes) {
 	SI_ASSERT_NOT_NULL(win);
 	siWinRenderingCtxCPU* cpu = &win->render.cpu;
 	cpu->size = win->originalSize;
-	cpu->maxSize = cpu->size; //siapp_screenGetCurrentSize();
+	cpu->maxSize = siapp_screenGetCurrentSize();
 	cpu->fps = 0;
 
 #if defined(SIAPP_PLATFORM_API_X11)
@@ -5577,8 +5837,9 @@ b32 siapp_windowCPUInit(siWindow* win, u32 maxTexCount, siArea maxTexRes) {
 	SI_STOPIF(cpu->bitmap == nil, return false);
 	cpu->buffer = (siByte*)calloc(cpu->maxSize.width * cpu->maxSize.height, 4);
 #elif defined(SIAPP_PLATFORM_API_COCOA)
-	cpu->buffer = (siByte*)calloc(cpu->size.width * cpu->size.height, 3);
+	cpu->buffer = (siByte*)calloc(cpu->maxSize.width * cpu->maxSize.height, 3);
 	cpu->redraw = false;
+	cpu->boundsMask = si_simd256_setI32(cpu->size.width, cpu->size.height, cpu->size.width, cpu->size.height);
 #endif
 	SI_ASSERT_NOT_NULL(cpu->buffer);
 	win->atlas = siapp_textureAtlasMake(win, maxTexRes, maxTexCount, SI_RESIZE_DEFAULT);
@@ -5609,7 +5870,9 @@ void siapp_windowCPURender(siWindow* win) {
 	release(rep);
 #endif
 
-	si_sleep(cpu->fps);
+	if (cpu->fps != 0) {
+		si_sleep(cpu->fps);
+	}
 }
 /* */
 void siapp_windowCPUDestroy(siWindow* win) {

@@ -1049,7 +1049,12 @@ typedef struct { f32 x, y, z, w; } siVec4;
 #define SI_VEC4(x, y, z, w) ((siVec4){x, y, z, w})
 /* rect - siRect
  * Macro to define a 4D vector from a regular 'siRect' struct. */
- #define SI_VEC4R(rect) SI_VEC4((rect).x, (rect).y, (rect).width, (rect).height)
+#define SI_VEC4R(rect) SI_VEC4((rect).x, (rect).y, (rect).width, (rect).height)
+
+/* */
+typedef struct { f32 x1, x2, y1, y2; } siCoordsF32;
+/* */
+typedef struct { u32 x1, x2, y1, y2; } siCoordsU32;
 
 typedef SI_ENUM(u32, siDirection) {
 	SI_DIRECTION_LEFT,

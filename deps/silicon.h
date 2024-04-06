@@ -35,11 +35,12 @@
 #include <objc/runtime.h>
 #include <objc/message.h>
 
-#define SILICON_H
+#ifndef SICDEF
 #ifdef SICDEF_STATIC
 #define SICDEF static /* I have this so I can get warnings for functions that aren't defined */
 #else
 #define SICDEF static inline
+#endif
 #endif
 
 
@@ -571,6 +572,93 @@ enum {
 	NSNewlineCharacter 			= 0x000a,
 	NSCarriageReturnCharacter 	= 0x000d
 };
+
+APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeString	 		API_AVAILABLE(macos(10.6)); // Replaces NSStringPboardType
+APPKIT_EXTERN NSPasteboardType const NSPasteboardTypePDF			API_AVAILABLE(macos(10.6)); // Replaces NSPDFPboardType
+APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeTIFF	 		API_AVAILABLE(macos(10.6)); // Replaces NSTIFFPboardType
+APPKIT_EXTERN NSPasteboardType const NSPasteboardTypePNG	 		API_AVAILABLE(macos(10.6));
+APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeRTF	 		API_AVAILABLE(macos(10.6)); // Replaces NSRTFPboardType
+APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeRTFD	 		API_AVAILABLE(macos(10.6)); // Replaces NSRTFDPboardType
+APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeHTML	 		API_AVAILABLE(macos(10.6)); // Replaces NSHTMLPboardType
+APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeTabularText 		API_AVAILABLE(macos(10.6)); // Replaces NSTabularTextPboardType
+APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeFont 			API_AVAILABLE(macos(10.6)); // Replaces NSFontPboardType
+APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeRuler 			API_AVAILABLE(macos(10.6)); // Replaces NSRulerPboardType
+APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeColor 			API_AVAILABLE(macos(10.6)); // Replaces NSColorPboardType
+APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeSound 			API_AVAILABLE(macos(10.6)); // Replaces NSSoundPboardType
+APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeMultipleTextSelection 	API_AVAILABLE(macos(10.6)); // Replaces NSMultipleTextSelectionPboardType
+APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeTextFinderOptions		API_AVAILABLE(macos(10.7)); // Replaces NSPasteboardTypeFindPanelSearchOptions
+APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeURL                        API_AVAILABLE(macos(10.13)); // Equivalent to kUTTypeURL
+APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeFileURL                    API_AVAILABLE(macos(10.13)); // Equivalent to kUTTypeFileURL
+
+static const NSWindowStyleMask NSBorderlessWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskBorderless", macos(10.0,10.12)) = NSWindowStyleMaskBorderless;
+static const NSWindowStyleMask NSTitledWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskTitled", macos(10.0,10.12)) = NSWindowStyleMaskTitled;
+static const NSWindowStyleMask NSClosableWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskClosable", macos(10.0,10.12)) = NSWindowStyleMaskClosable;
+static const NSWindowStyleMask NSMiniaturizableWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskMiniaturizable", macos(10.0,10.12)) = NSWindowStyleMaskMiniaturizable;
+static const NSWindowStyleMask NSResizableWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskResizable", macos(10.0,10.12)) = NSWindowStyleMaskResizable;
+static const NSWindowStyleMask NSTexturedBackgroundWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskTexturedBackground", macos(10.0,10.12)) = NSWindowStyleMaskTexturedBackground;
+static const NSWindowStyleMask NSUnifiedTitleAndToolbarWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskUnifiedTitleAndToolbar", macos(10.0,10.12)) = NSWindowStyleMaskUnifiedTitleAndToolbar;
+static const NSWindowStyleMask NSFullScreenWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskFullScreen", macos(10.0,10.12)) = NSWindowStyleMaskFullScreen;
+static const NSWindowStyleMask NSFullSizeContentViewWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskFullSizeContentView", macos(10.0,10.12)) = NSWindowStyleMaskFullSizeContentView;
+static const NSWindowStyleMask NSUtilityWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskUtilityWindow", macos(10.0,10.12)) = NSWindowStyleMaskUtilityWindow;
+static const NSWindowStyleMask NSDocModalWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskDocModalWindow", macos(10.0,10.12)) = NSWindowStyleMaskDocModalWindow;
+static const NSWindowStyleMask NSNonactivatingPanelMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskNonactivatingPanel", macos(10.0,10.12)) = NSWindowStyleMaskNonactivatingPanel;
+static const NSWindowStyleMask NSHUDWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskHUDWindow", macos(10.0,10.12)) = NSWindowStyleMaskHUDWindow;
+static const NSWindowStyleMask NSUnscaledWindowMask API_DEPRECATED("NSUnscaledWindowMask is deprecated and has no effect. The scale factor for a window backing store is dynamic and dependent on the screen it is placed on.", macos(10.0,10.9)) = 1 << 11;
+
+#define NSDefaultRunLoopMode NSString_stringWithUTF8String("kCFRunLoopDefaultMode")
+
+// Additional NSModalResponse values
+static const NSModalResponse NSModalResponseOK = 1;
+static const NSModalResponse NSModalResponseCancel = 0;
+
+enum {
+	NSFontItalicTrait = (1 << 0),
+	NSFontBoldTrait = (1 << 1),
+	NSFontExpandedTrait = (1 << 5),
+	NSFontCondensedTrait = (1 << 6),
+	NSFontMonoSpaceTrait = (1 << 10),
+	NSFontVerticalTrait = (1 << 11),
+	NSFontUIOptimizedTrait = (1 << 12)
+};
+
+typedef NS_ENUM(NSUInteger, NSSearchPathDirectory) {
+	NSApplicationDirectory = 1,             // supported applications (Applications)
+	NSDemoApplicationDirectory,             // unsupported applications, demonstration versions (Demos)
+	NSDeveloperApplicationDirectory,        // developer applications (Developer/Applications). DEPRECATED - there is no one single Developer directory.
+	NSAdminApplicationDirectory,            // system and network administration applications (Administration)
+	NSLibraryDirectory,                     // various documentation, support, and configuration files, resources (Library)
+	NSDeveloperDirectory,                   // developer resources (Developer) DEPRECATED - there is no one single Developer directory.
+	NSUserDirectory,                        // user home directories (Users)
+	NSDocumentationDirectory,               // documentation (Documentation)
+	NSDocumentDirectory,                    // documents (Documents)
+	NSCoreServiceDirectory,                 // location of CoreServices directory (System/Library/CoreServices)
+	NSAutosavedInformationDirectory API_AVAILABLE(macos(10.6), ios(4.0), watchos(2.0), tvos(9.0)) = 11,   // location of autosaved documents (Documents/Autosaved)
+	NSDesktopDirectory = 12,                // location of user's desktop
+	NSCachesDirectory = 13,                 // location of discardable cache files (Library/Caches)
+	NSApplicationSupportDirectory = 14,     // location of application support files (plug-ins, etc) (Library/Application Support)
+	NSDownloadsDirectory API_AVAILABLE(macos(10.5), ios(2.0), watchos(2.0), tvos(9.0)) = 15,              // location of the user's "Downloads" directory
+	NSInputMethodsDirectory API_AVAILABLE(macos(10.6), ios(4.0), watchos(2.0), tvos(9.0)) = 16,           // input methods (Library/Input Methods)
+	NSMoviesDirectory API_AVAILABLE(macos(10.6), ios(4.0), watchos(2.0), tvos(9.0)) = 17,                 // location of user's Movies directory (~/Movies)
+	NSMusicDirectory API_AVAILABLE(macos(10.6), ios(4.0), watchos(2.0), tvos(9.0)) = 18,                  // location of user's Music directory (~/Music)
+	NSPicturesDirectory API_AVAILABLE(macos(10.6), ios(4.0), watchos(2.0), tvos(9.0)) = 19,               // location of user's Pictures directory (~/Pictures)
+	NSPrinterDescriptionDirectory API_AVAILABLE(macos(10.6), ios(4.0), watchos(2.0), tvos(9.0)) = 20,     // location of system's PPDs directory (Library/Printers/PPDs)
+	NSSharedPublicDirectory API_AVAILABLE(macos(10.6), ios(4.0), watchos(2.0), tvos(9.0)) = 21,           // location of user's Public sharing directory (~/Public)
+	NSPreferencePanesDirectory API_AVAILABLE(macos(10.6), ios(4.0), watchos(2.0), tvos(9.0)) = 22,        // location of the PreferencePanes directory for use with System Preferences (Library/PreferencePanes)
+	NSApplicationScriptsDirectory API_AVAILABLE(macos(10.8)) API_UNAVAILABLE(ios, watchos, tvos) = 23,      // location of the user scripts folder for the calling application (~/Library/Application Scripts/code-signing-id)
+	NSItemReplacementDirectory API_AVAILABLE(macos(10.6), ios(4.0), watchos(2.0), tvos(9.0)) = 99,	    // For use with NSFileManager's URLForDirectory:inDomain:appropriateForURL:create:error:
+	NSAllApplicationsDirectory = 100,       // all directories where applications can occur
+	NSAllLibrariesDirectory = 101,          // all directories where resources can occur
+	NSTrashDirectory API_AVAILABLE(macos(10.8), ios(11.0)) API_UNAVAILABLE(watchos, tvos) = 102             // location of Trash directory
+};
+
+typedef NS_ENUM(NSUInteger, NSSearchPathDomainMask) {
+	NSUserDomainMask = 1,       // user's home directory --- place to install user's personal items (~)
+	NSLocalDomainMask = 2,      // local to the current machine --- place to install items available to everyone on this machine (/Library)
+	NSNetworkDomainMask = 4,    // publically available location in the local area network --- place to install items available on the network (/Network)
+	NSSystemDomainMask = 8,     // provided by Apple, unmodifiable (/System)
+	NSAllDomainsMask = 0x0ffff  // all domains: all of the above and future items
+};
+
 
 /* init function, this function is run by `NSApplication_sharedApplication` */
 SICDEF void si_initNS(void);
@@ -1178,12 +1266,6 @@ SICDEF NSModalResponse NSOpenPanel_runModal(NSOpenPanel* openPanel);
 
 
 /* ============ CALayer ============ */
-/* ====== CALayer properties ====== */
-/* An object that provides the contents of the layer. Animatable. */
-si_define_property(CALayer, id, contents, Contents, layer);
-/* A Boolean indicating whether the layer is displayed. Animatable. */
-si_define_property(CALayer, bool, isHidden, Hidden, layer);
-
 /* ============ CATransaction ============ */
 /* ====== CATransaction functions ====== */
 /* Begin a new transaction for the current thread. */
@@ -1199,101 +1281,44 @@ SICDEF bool CATransaction_disableActions(void);
  * transaction group are suppressed. */
 SICDEF void CATransaction_setDisableActions(bool flag);
 
-/* ============ OpenGL ============ */
-/* TODO(EimaMei): Add documentation & deprecations macros for the OpenGL functions. */
-SICDEF NSOpenGLPixelFormat* NSOpenGLPixelFormat_initWithAttributes(const NSOpenGLPixelFormatAttribute* attribs);
+/* ====== CALayer properties ====== */
+/* An object that provides the contents of the layer. Animatable. */
+si_define_property(CALayer, id, contents, Contents, layer);
+/* A Boolean indicating whether the layer is displayed. Animatable. */
+si_define_property(CALayer, bool, isHidden, Hidden, layer);
+
+
+/* ============ NSOpenGLView ============ */
+/* ====== NSOpenGLView functions ====== */
+/* Returns an NSOpenGLView object initialized with the specified frame rectangle and pixel format. */
 SICDEF NSOpenGLView* NSOpenGLView_initWithFrame(NSRect frameRect, NSOpenGLPixelFormat* format);
+/* Used by subclasses to initialize OpenGL state. */
 SICDEF void NSOpenGLView_prepareOpenGL(NSOpenGLView* view);
-SICDEF NSOpenGLContext* NSOpenGLView_openGLContext(NSOpenGLView* view);
-SICDEF void NSOpenGLContext_setValues(NSOpenGLContext* context, const int* vals, NSOpenGLContextParameter param);
+
+/* ====== NSOpenGLView properties ====== */
+/* The NSOpenGLContext object associated with the receiver. */
+si_define_property(NSOpenGLView, NSOpenGLContext*, openGLContext, OpenGLContext, view);
+
+
+/* ============ NSOpenGLContext ============ */
+/* ====== NSOpenGLContext functions ====== */
+/* Returns an OpenGL context object initialized with the specified pixel format information. */
+SICDEF NSOpenGLContext* NSOpenGLContext_initWithFormat(NSOpenGLPixelFormat* format, NSOpenGLContext* share);
+/* Sets the context as the current OpenGL context object. */
 SICDEF void NSOpenGLContext_makeCurrentContext(NSOpenGLContext* context);
+/* Copies the back buffer to the front buffer of the OpenGL context. */
 SICDEF void NSOpenGLContext_flushBuffer(NSOpenGLContext* context);
+/* Sets the value of the specified parameter. */
+SICDEF void NSOpenGLContext_setValues(NSOpenGLContext* context, const int* vals, NSOpenGLContextParameter param);
 
-APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeString	 		API_AVAILABLE(macos(10.6)); // Replaces NSStringPboardType
-APPKIT_EXTERN NSPasteboardType const NSPasteboardTypePDF			API_AVAILABLE(macos(10.6)); // Replaces NSPDFPboardType
-APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeTIFF	 		API_AVAILABLE(macos(10.6)); // Replaces NSTIFFPboardType
-APPKIT_EXTERN NSPasteboardType const NSPasteboardTypePNG	 		API_AVAILABLE(macos(10.6));
-APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeRTF	 		API_AVAILABLE(macos(10.6)); // Replaces NSRTFPboardType
-APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeRTFD	 		API_AVAILABLE(macos(10.6)); // Replaces NSRTFDPboardType
-APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeHTML	 		API_AVAILABLE(macos(10.6)); // Replaces NSHTMLPboardType
-APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeTabularText 		API_AVAILABLE(macos(10.6)); // Replaces NSTabularTextPboardType
-APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeFont 			API_AVAILABLE(macos(10.6)); // Replaces NSFontPboardType
-APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeRuler 			API_AVAILABLE(macos(10.6)); // Replaces NSRulerPboardType
-APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeColor 			API_AVAILABLE(macos(10.6)); // Replaces NSColorPboardType
-APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeSound 			API_AVAILABLE(macos(10.6)); // Replaces NSSoundPboardType
-APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeMultipleTextSelection 	API_AVAILABLE(macos(10.6)); // Replaces NSMultipleTextSelectionPboardType
-APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeTextFinderOptions		API_AVAILABLE(macos(10.7)); // Replaces NSPasteboardTypeFindPanelSearchOptions
-APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeURL                        API_AVAILABLE(macos(10.13)); // Equivalent to kUTTypeURL
-APPKIT_EXTERN NSPasteboardType const NSPasteboardTypeFileURL                    API_AVAILABLE(macos(10.13)); // Equivalent to kUTTypeFileURL
+/* ====== NSOpenGLView properties ====== */
+/* Returns the OpenGL context’s view. */
+si_define_property(NSOpenGLContext, NSView*, view, View, context);
 
-static const NSWindowStyleMask NSBorderlessWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskBorderless", macos(10.0,10.12)) = NSWindowStyleMaskBorderless;
-static const NSWindowStyleMask NSTitledWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskTitled", macos(10.0,10.12)) = NSWindowStyleMaskTitled;
-static const NSWindowStyleMask NSClosableWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskClosable", macos(10.0,10.12)) = NSWindowStyleMaskClosable;
-static const NSWindowStyleMask NSMiniaturizableWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskMiniaturizable", macos(10.0,10.12)) = NSWindowStyleMaskMiniaturizable;
-static const NSWindowStyleMask NSResizableWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskResizable", macos(10.0,10.12)) = NSWindowStyleMaskResizable;
-static const NSWindowStyleMask NSTexturedBackgroundWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskTexturedBackground", macos(10.0,10.12)) = NSWindowStyleMaskTexturedBackground;
-static const NSWindowStyleMask NSUnifiedTitleAndToolbarWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskUnifiedTitleAndToolbar", macos(10.0,10.12)) = NSWindowStyleMaskUnifiedTitleAndToolbar;
-static const NSWindowStyleMask NSFullScreenWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskFullScreen", macos(10.0,10.12)) = NSWindowStyleMaskFullScreen;
-static const NSWindowStyleMask NSFullSizeContentViewWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskFullSizeContentView", macos(10.0,10.12)) = NSWindowStyleMaskFullSizeContentView;
-static const NSWindowStyleMask NSUtilityWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskUtilityWindow", macos(10.0,10.12)) = NSWindowStyleMaskUtilityWindow;
-static const NSWindowStyleMask NSDocModalWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskDocModalWindow", macos(10.0,10.12)) = NSWindowStyleMaskDocModalWindow;
-static const NSWindowStyleMask NSNonactivatingPanelMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskNonactivatingPanel", macos(10.0,10.12)) = NSWindowStyleMaskNonactivatingPanel;
-static const NSWindowStyleMask NSHUDWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskHUDWindow", macos(10.0,10.12)) = NSWindowStyleMaskHUDWindow;
-static const NSWindowStyleMask NSUnscaledWindowMask API_DEPRECATED("NSUnscaledWindowMask is deprecated and has no effect. The scale factor for a window backing store is dynamic and dependent on the screen it is placed on.", macos(10.0,10.9)) = 1 << 11;
-
-#define NSDefaultRunLoopMode NSString_stringWithUTF8String("kCFRunLoopDefaultMode")
-
-// Additional NSModalResponse values
-static const NSModalResponse NSModalResponseOK = 1;
-static const NSModalResponse NSModalResponseCancel = 0;
-
-enum {
-	NSFontItalicTrait = (1 << 0),
-	NSFontBoldTrait = (1 << 1),
-	NSFontExpandedTrait = (1 << 5),
-	NSFontCondensedTrait = (1 << 6),
-	NSFontMonoSpaceTrait = (1 << 10),
-	NSFontVerticalTrait = (1 << 11),
-	NSFontUIOptimizedTrait = (1 << 12)
-};
-
-typedef NS_ENUM(NSUInteger, NSSearchPathDirectory) {
-	NSApplicationDirectory = 1,             // supported applications (Applications)
-	NSDemoApplicationDirectory,             // unsupported applications, demonstration versions (Demos)
-	NSDeveloperApplicationDirectory,        // developer applications (Developer/Applications). DEPRECATED - there is no one single Developer directory.
-	NSAdminApplicationDirectory,            // system and network administration applications (Administration)
-	NSLibraryDirectory,                     // various documentation, support, and configuration files, resources (Library)
-	NSDeveloperDirectory,                   // developer resources (Developer) DEPRECATED - there is no one single Developer directory.
-	NSUserDirectory,                        // user home directories (Users)
-	NSDocumentationDirectory,               // documentation (Documentation)
-	NSDocumentDirectory,                    // documents (Documents)
-	NSCoreServiceDirectory,                 // location of CoreServices directory (System/Library/CoreServices)
-	NSAutosavedInformationDirectory API_AVAILABLE(macos(10.6), ios(4.0), watchos(2.0), tvos(9.0)) = 11,   // location of autosaved documents (Documents/Autosaved)
-	NSDesktopDirectory = 12,                // location of user's desktop
-	NSCachesDirectory = 13,                 // location of discardable cache files (Library/Caches)
-	NSApplicationSupportDirectory = 14,     // location of application support files (plug-ins, etc) (Library/Application Support)
-	NSDownloadsDirectory API_AVAILABLE(macos(10.5), ios(2.0), watchos(2.0), tvos(9.0)) = 15,              // location of the user's "Downloads" directory
-	NSInputMethodsDirectory API_AVAILABLE(macos(10.6), ios(4.0), watchos(2.0), tvos(9.0)) = 16,           // input methods (Library/Input Methods)
-	NSMoviesDirectory API_AVAILABLE(macos(10.6), ios(4.0), watchos(2.0), tvos(9.0)) = 17,                 // location of user's Movies directory (~/Movies)
-	NSMusicDirectory API_AVAILABLE(macos(10.6), ios(4.0), watchos(2.0), tvos(9.0)) = 18,                  // location of user's Music directory (~/Music)
-	NSPicturesDirectory API_AVAILABLE(macos(10.6), ios(4.0), watchos(2.0), tvos(9.0)) = 19,               // location of user's Pictures directory (~/Pictures)
-	NSPrinterDescriptionDirectory API_AVAILABLE(macos(10.6), ios(4.0), watchos(2.0), tvos(9.0)) = 20,     // location of system's PPDs directory (Library/Printers/PPDs)
-	NSSharedPublicDirectory API_AVAILABLE(macos(10.6), ios(4.0), watchos(2.0), tvos(9.0)) = 21,           // location of user's Public sharing directory (~/Public)
-	NSPreferencePanesDirectory API_AVAILABLE(macos(10.6), ios(4.0), watchos(2.0), tvos(9.0)) = 22,        // location of the PreferencePanes directory for use with System Preferences (Library/PreferencePanes)
-	NSApplicationScriptsDirectory API_AVAILABLE(macos(10.8)) API_UNAVAILABLE(ios, watchos, tvos) = 23,      // location of the user scripts folder for the calling application (~/Library/Application Scripts/code-signing-id)
-	NSItemReplacementDirectory API_AVAILABLE(macos(10.6), ios(4.0), watchos(2.0), tvos(9.0)) = 99,	    // For use with NSFileManager's URLForDirectory:inDomain:appropriateForURL:create:error:
-	NSAllApplicationsDirectory = 100,       // all directories where applications can occur
-	NSAllLibrariesDirectory = 101,          // all directories where resources can occur
-	NSTrashDirectory API_AVAILABLE(macos(10.8), ios(11.0)) API_UNAVAILABLE(watchos, tvos) = 102             // location of Trash directory
-};
-
-typedef NS_ENUM(NSUInteger, NSSearchPathDomainMask) {
-	NSUserDomainMask = 1,       // user's home directory --- place to install user's personal items (~)
-	NSLocalDomainMask = 2,      // local to the current machine --- place to install items available to everyone on this machine (/Library)
-	NSNetworkDomainMask = 4,    // publically available location in the local area network --- place to install items available on the network (/Network)
-	NSSystemDomainMask = 8,     // provided by Apple, unmodifiable (/System)
-	NSAllDomainsMask = 0x0ffff  // all domains: all of the above and future items
-};
+/* ============ NSOpenGLPixelFormat ============ */
+/* ====== NSOpenGLPixelFormat functions ====== */
+/* Returns an OpenGL pixel format object initialized with specified pixel format attribute data. */
+SICDEF NSOpenGLPixelFormat* NSOpenGLPixelFormat_initWithAttributes(const NSOpenGLPixelFormatAttribute* attribs);
 
 #define NSSearchPathForDirectoriesInDomains _NSSearchPathForDirectoriesInDomains
 siArray(const char*) _NSSearchPathForDirectoriesInDomains(NSSearchPathDirectory directory, NSSearchPathDomainMask domainMask, bool expandTilde);
@@ -1331,6 +1356,8 @@ siArray(const char*) _NSSearchPathForDirectoriesInDomains(NSSearchPathDirectory 
 #define objc_msgSend_void_SEL		((void (*)(id, SEL, SEL))objc_msgSend)
 #define objc_msgSend_id_char_const	((id (*)(id, SEL, char const *))objc_msgSend)
 
+
+#define objc_msgSend_id_id_id		((id (*)(id, SEL, id, id))objc_msgSend)
 /*
 abi_objc_msgSend_ftret - Sends a message with a floating-point return value to an instance of a class.
 abi_objc_msgSend_stret - Sends a message with a data-structure return value to an instance of a class.
@@ -1563,7 +1590,6 @@ enum{
 	NS_OPENGL_PIXEL_FORMAT_INIT_WITH_ATTRIBUTES_CODE,
 	NS_OPENGL_VIEW_INIT_WITH_FRAME_CODE,
 	NS_OPENGL_VIEW_PREPARE_OPENGL_CODE,
-	NS_OPENGL_VIEW_OPENGL_CONTEXT_CODE,
 	NS_OPENGL_CONTEXT_SET_VALUES_CODE,
 	NS_OPENGL_CONTEXT_MAKE_CURRENT_CONTEXT_CODE,
 	NS_BITMAPIMAGEREP_BITMAP_CODE,
@@ -1863,7 +1889,6 @@ void si_initNS(void) {
 	SI_NS_FUNCTIONS[NS_OPENGL_PIXEL_FORMAT_INIT_WITH_ATTRIBUTES_CODE] = sel_registerName("initWithAttributes:");
 	SI_NS_FUNCTIONS[NS_OPENGL_VIEW_INIT_WITH_FRAME_CODE] = sel_registerName("initWithFrame:pixelFormat:");
 	SI_NS_FUNCTIONS[NS_OPENGL_VIEW_PREPARE_OPENGL_CODE] = sel_registerName("prepareOpenGL");
-	SI_NS_FUNCTIONS[NS_OPENGL_VIEW_OPENGL_CONTEXT_CODE] = sel_registerName("openGLContext");
 	SI_NS_FUNCTIONS[NS_OPENGL_CONTEXT_SET_VALUES_CODE] = sel_registerName("setValues:forParameter:");
 	SI_NS_FUNCTIONS[NS_OPENGL_CONTEXT_MAKE_CURRENT_CONTEXT_CODE] = sel_registerName("makeCurrentContext");
 	SI_NS_FUNCTIONS[NS_BITMAPIMAGEREP_BITMAP_CODE] = sel_registerName("bitmapData");
@@ -3576,13 +3601,6 @@ void NSRelease(id obj) { objc_msgSend_void(obj, SI_NS_FUNCTIONS[NS_RELEASE_CODE]
 
 void NSRetain(id obj) { objc_msgSend_void(obj, SI_NS_FUNCTIONS[NS_RETAIN_CODE]); }
 
-/* ======== OpenGL ======== */
-NSOpenGLPixelFormat* NSOpenGLPixelFormat_initWithAttributes(const NSOpenGLPixelFormatAttribute* attribs) {
-	void* func = SI_NS_FUNCTIONS[NS_OPENGL_PIXEL_FORMAT_INIT_WITH_ATTRIBUTES_CODE];
-	return (NSOpenGLPixelFormat *)((id (*)(id, SEL, const NSOpenGLPixelFormatAttribute*))objc_msgSend)
-			(NSAlloc(SI_NS_CLASSES[NS_OPENGL_PF_CODE]), func, attribs);
-}
-
 NSOpenGLView* NSOpenGLView_initWithFrame(NSRect frameRect, NSOpenGLPixelFormat* format) {
 	void* func = SI_NS_FUNCTIONS[NS_OPENGL_VIEW_INIT_WITH_FRAME_CODE];
 	return (NSOpenGLView *)((id (*)(id, SEL, NSRect, NSOpenGLPixelFormat*))objc_msgSend)
@@ -3594,15 +3612,13 @@ void NSOpenGLView_prepareOpenGL(NSOpenGLView* view) {
 	objc_msgSend_void(view, func);
 }
 
-NSOpenGLContext* NSOpenGLView_openGLContext(NSOpenGLView* view) {
-	void* func = SI_NS_FUNCTIONS[NS_OPENGL_VIEW_OPENGL_CONTEXT_CODE];
-	return (NSOpenGLContext *)objc_msgSend_id(view, func);
-}
+si_implement_property(NSOpenGLView, NSOpenGLContext*, openGLContext, OpenGLContext, view)
 
-void NSOpenGLContext_setValues(NSOpenGLContext* context, const int* vals, NSOpenGLContextParameter param) {
-	void* func = SI_NS_FUNCTIONS[NS_OPENGL_CONTEXT_SET_VALUES_CODE];
-	((void (*)(id, SEL, const int*, NSOpenGLContextParameter))objc_msgSend)
-			(context, func, vals, param);
+NSOpenGLContext* NSOpenGLContext_initWithFormat(NSOpenGLPixelFormat* format, NSOpenGLContext* share) {
+	return objc_msgSend_id_id_id(
+		NSAlloc(objc_getClass("NSOpenGLContext")),
+		sel_registerName("initWithFormat:shareContext:"), format, share
+	);
 }
 
 void NSOpenGLContext_makeCurrentContext(NSOpenGLContext* context) {
@@ -3612,6 +3628,20 @@ void NSOpenGLContext_makeCurrentContext(NSOpenGLContext* context) {
 
 void NSOpenGLContext_flushBuffer(NSOpenGLContext* context) {
 	objc_msgSend_void(context, sel_registerName("flushBuffer"));
+}
+
+void NSOpenGLContext_setValues(NSOpenGLContext* context, const int* vals, NSOpenGLContextParameter param) {
+	void* func = SI_NS_FUNCTIONS[NS_OPENGL_CONTEXT_SET_VALUES_CODE];
+	((void (*)(id, SEL, const int*, NSOpenGLContextParameter))objc_msgSend)
+			(context, func, vals, param);
+}
+
+si_implement_property(NSOpenGLContext, NSView*, view, View, context)
+
+NSOpenGLPixelFormat* NSOpenGLPixelFormat_initWithAttributes(const NSOpenGLPixelFormatAttribute* attribs) {
+	void* func = SI_NS_FUNCTIONS[NS_OPENGL_PIXEL_FORMAT_INIT_WITH_ATTRIBUTES_CODE];
+	return (NSOpenGLPixelFormat *)((id (*)(id, SEL, const NSOpenGLPixelFormatAttribute*))objc_msgSend)
+		(NSAlloc(SI_NS_CLASSES[NS_OPENGL_PF_CODE]), func, attribs);
 }
 
 #if defined(SILICON_ARRAY_IMPLEMENTATION)
