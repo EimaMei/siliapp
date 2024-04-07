@@ -774,6 +774,12 @@ SI_STATIC_ASSERT(sizeof(nil) == sizeof(void*));
 	 * Denotes that this statement is less likely to be expected. */
 	#define SI_UNLIKELY(x) (x)
 #endif
+
+#if SI_STANDARD_VERSION < SI_STANDARD_C11 && !defined(memcpy_s)
+/* dst - rawptr | dstsz - usize | src - rawptr | count - usize
+ * A pre-C11 implementation* of memcpy_s. */
+#define memcpy_s(dst, dstsz, src, count) (memcpy(dst, src, si_min(dstsz, count)) != dst)
+#endif
 /*
 	========================
 	| Endian swap macros   |

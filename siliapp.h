@@ -150,7 +150,7 @@ typedef SI_ENUM(b32, siWindowArg) {
 	SI_WINDOW_OPTIMAL_SIZE            = SI_BIT(8),
 	SI_WINDOW_KEEP_ASPECT_RATIO       = SI_BIT(9),
 
-	SI_WINDOW_DEFAULT                 = SI_WINDOW_CENTER | SI_WINDOW_RESIZABLE | SI_WINDOW_SCALING,
+	SI_WINDOW_DEFAULT                 = SI_WINDOW_CENTER | SI_WINDOW_RESIZABLE | SI_WINDOW_KEEP_ASPECT_RATIO,
 	SI_WINDOW_DESKTOP                 = SI_WINDOW_FULLSCREEN | SI_WINDOW_BORDERLESS,
 };
 
@@ -455,7 +455,6 @@ typedef struct {
 	b32 redraw;
 #endif
 	siArea size;
-	siArea maxSize;
 	siInt32_4x boundsMask;
 
 	siColor bgColor;
@@ -1055,10 +1054,39 @@ siMessageBoxResult siapp_messageBoxEx(const siWindow* win, cstring title, usize 
 #include <siligl.h>
 
 #if defined(SIAPP_PLATFORM_API_COCOA)
-#define GL_SILENCE_DEPRECATION
-#define SILICON_IMPLEMENTATION
 #define SICDEF
+#define GL_SILENCE_DEPRECATION
 #include <silicon.h>
+
+
+#ifdef __arm64__
+/* ARM just uses objc_msgSend */
+#define abi_objc_msgSend_stret objc_msgSend
+#define abi_objc_msgSend_fpret objc_msgSend
+#else /* __i386__ */
+/* x86 just uses abi_objc_msgSend_fpret and (NSColor *)objc_msgSend_id respectively */
+#define abi_objc_msgSend_stret objc_msgSend_stret
+#define abi_objc_msgSend_fpret objc_msgSend_fpret
+#endif
+
+#define objc_msgSend_id				((id (*)(id, SEL))objc_msgSend)
+#define objc_msgSend_id_id			((id (*)(id, SEL, id))objc_msgSend)
+#define objc_msgSend_id_rect		((id (*)(id, SEL, NSRect))objc_msgSend)
+#define objc_msgSend_uint			((NSUInteger (*)(id, SEL))objc_msgSend)
+#define objc_msgSend_int			((NSInteger (*)(id, SEL))objc_msgSend)
+#define objc_msgSend_SEL			((SEL (*)(id, SEL))objc_msgSend)
+#define objc_msgSend_float			((CGFloat (*)(id, SEL))abi_objc_msgSend_fpret)
+#define objc_msgSend_bool			((BOOL (*)(id, SEL))objc_msgSend)
+#define objc_msgSend_void			((void (*)(id, SEL))objc_msgSend)
+#define objc_msgSend_double			((double (*)(id, SEL))objc_msgSend)
+#define objc_msgSend_void_id		((void (*)(id, SEL, id))objc_msgSend)
+#define objc_msgSend_void_uint		((void (*)(id, SEL, NSUInteger))objc_msgSend)
+#define objc_msgSend_void_int		((void (*)(id, SEL, NSInteger))objc_msgSend)
+#define objc_msgSend_void_bool		((void (*)(id, SEL, BOOL))objc_msgSend)
+#define objc_msgSend_void_float		((void (*)(id, SEL, CGFloat))objc_msgSend)
+#define objc_msgSend_void_double	((void (*)(id, SEL, double))objc_msgSend)
+#define objc_msgSend_void_SEL		((void (*)(id, SEL, SEL))objc_msgSend)
+#define objc_msgSend_id_char_const	((id (*)(id, SEL, char const *))objc_msgSend)
 #endif
 
 #if 1 /* Common. */
@@ -1149,39 +1177,38 @@ void siapp__resizeWindow(siWindow* win, i32 width, i32 height) {
 #endif
 
 			if (win->arg & SI_WINDOW_SCALING) {
-		  	    glViewport(0, 0, width, height);
-		  	}
-		  	if (win->arg & SI_WINDOW_KEEP_ASPECT_RATIO) {
+				glViewport(0, 0, width, height);
+			}
+			else if (win->arg & SI_WINDOW_KEEP_ASPECT_RATIO) {
 				i32 newY = 0;
 
-		  	    if (height <= win->originalSize.height) {
-		  	 	   newY = height - win->originalSize.height;
-		  	 	   height = win->originalSize.height;
-		  	    }
+				if (height <= win->originalSize.height) {
+					newY = height - win->originalSize.height;
+					height = win->originalSize.height;
+				}
 
-		  	    f32 aspect = (f32)height / gl->size.height;
-		  	    i32 newH = gl->size.height * aspect;
-		  	    i32 newW = gl->size.width * aspect;
+				f32 aspect = (f32)height / gl->size.height;
+				i32 newH = gl->size.height * aspect;
+				i32 newW = gl->size.width * aspect;
 
-		  	    glViewport(0, newY, newW, newH);
-		  	}
-		  	else {
-		  	    glViewport(0, height - gl->size.height, gl->size.width, gl->size.height);
-		  	}
+				glViewport(0, newY, newW, newH);
+			}
+			else {
+				glViewport(0, height - gl->size.height, gl->size.width, gl->size.height);
+			}
 
-		  	GLint view[4];
-		  	glGetIntegerv(GL_VIEWPORT, view);
-		  	f32 viewW = view[2];
-		  	f32 viewH = view[3];
+			GLint view[4];
+			glGetIntegerv(GL_VIEWPORT, view);
+			f32 viewW = view[2];
+			f32 viewH = view[3];
 
-		  	win->scaleFactor = SI_VEC2(viewW / gl->size.width, viewH / gl->size.height);
-		  	break;
+			win->scaleFactor = SI_VEC2(viewW / gl->size.width, viewH / gl->size.height);
+			break;
 		}
 		case SI_RENDERING_CPU: {
 			siWinRenderingCtxCPU* cpu = &win->render.cpu;
 			cpu->size = SI_AREA(width, height);
 			cpu->redraw = true;
-
 
 			if (win->arg & SI_WINDOW_SCALING) {
 				win->scaleFactor = SI_VEC2(
@@ -1189,6 +1216,17 @@ void siapp__resizeWindow(siWindow* win, i32 width, i32 height) {
 					(f32)height / win->originalSize.height
 				);
 		  	}
+			else if (win->arg & SI_WINDOW_KEEP_ASPECT_RATIO) {
+				f32 aspect = (f32)height / win->originalSize.height;
+				f32 newW = win->originalSize.width * aspect;
+				f32 newH = win->originalSize.height * aspect;
+
+
+				win->scaleFactor = SI_VEC2(
+					newW / win->originalSize.width,
+					newH / win->originalSize.height
+				);
+			}
 			break;
 		}
 	}
@@ -1647,12 +1685,13 @@ NSSize si__osxWindowResize(void* self, SEL sel, NSSize frameSize) {
 	object_getInstanceVariable(self, "siWindow", (void*)&win);
 	SI_ASSERT_NOT_NULL(win);
 
-	siapp__resizeWindow(win, frameSize.width, frameSize.height - 29);
+	siapp__resizeWindow(win, frameSize.width, frameSize.height);
 	return frameSize;
 	SI_UNUSED(sel);
 }
 
 NSSize si__osxWindowFullscreen(void* self, SEL sel, NSSize frameSize) {
+	si_printf("test2\n");
 	return si__osxWindowResize(self, sel, frameSize);
 }
 
@@ -1662,6 +1701,8 @@ NSRect si__osxTest(void* self, SEL sel, NSWindow* window, NSRect newFrame) {
 	return newFrame;
 	SI_UNUSED(window);
 }
+b32 si__osxAcceptsFirstResponder(void) { si_printf("yes\n"); return true; }
+b32 si__osxPerformKeyEquivalent(void) { si_printf("yues2\n"); return true; }
 
 #define SI__CHANNEL_COUNT 3
 
@@ -1870,10 +1911,9 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 
 #if defined(SIAPP_PLATFORM_API_COCOA)
 	if (NSApp == nil) {
-		si_func_to_SEL_with_name(SI_DEFAULT, "windowShouldClose", (void*)si__osxWindowClose);
-
 		NSApp = NSApplication_sharedApplication();
 		NSApplication_setActivationPolicy(NSApp, NSApplicationActivationPolicyRegular);
+		si_func_to_SEL_with_name(SI_DEFAULT, "windowShouldClose", (void*)si__osxWindowClose);
 	}
 #endif
 
@@ -1988,9 +2028,10 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 		"L"
 	);
 	SI_ASSERT(res);
-
 	res = class_addMethod(delegateClass, sel_registerName("windowWillResize:toSize:"), (IMP)si__osxWindowResize, "{NSSize=ff}@:{NSSize=ff}");
+	SI_ASSERT(res);
 	res = class_addMethod(delegateClass, sel_registerName("window:willUseFullScreenContentSize:"), (IMP)si__osxWindowFullscreen, "{NSSize=ff}@:{NSSize=ff}");
+	SI_ASSERT(res);
 	res = class_addMethod(delegateClass, sel_registerName("windowWillUseStandardFrame:defaultFrame:"), (IMP)si__osxTest, "{NSRect=ffff}@:@{NSRect=ffff}");
 	SI_ASSERT(res);
 
@@ -2675,7 +2716,7 @@ siCursorType siapp_windowCursorGet(const siWindow* win) {
 }
 void siapp_windowCursorSet(siWindow* win, siCursorType cursor) {
 	SI_ASSERT_NOT_NULL(win);
-	SI_ASSERT(si_between(cursor, INT32_MIN, SI_CURSOR_COUNT));
+	SI_ASSERT(si_between(cursor, INT64_MIN, SI_CURSOR_COUNT));
 
 	b32 isDif = cursor != siapp_windowCursorGet(win) && !win->cursorSet;
 	win->cursorSet = true;
@@ -2717,6 +2758,20 @@ void siapp_windowCursorSet(siWindow* win, siCursorType cursor) {
 		cursorVal = *ptr;
 	}
 	XDefineCursor(win->display, win->hwnd, cursorVal);
+#else
+	NSCursor* cursorVal;
+
+	switch (cursor * isDif) {
+		case 0: return ;
+		case SI_CURSOR_ARROW: cursorVal = NSCursor_arrowCursor(); break;
+		case SI_CURSOR_HAND: cursorVal = NSCursor_pointingHandCursor(); break;
+		case SI_CURSOR_DOUBLE_ARROW_HORIZONTAL: cursorVal = NSCursor_resizeLeftRightCursor(); break;
+		case SI_CURSOR_TEXT_SELECT: cursorVal = NSCursor_IBeamCursor(); break;
+		default: { /* NOTE(EimaMei): If the cursor is negative, it's custom. */
+			cursorVal = si_cast(NSCursor*, -cursor);
+		}
+	}
+	NSCursor_set(cursorVal);
 #endif
 	win->cursor = cursor;
 
@@ -2815,7 +2870,20 @@ siCursorType siapp_cursorMake(siByte* data, siArea res, u32 channels) {
 	XcursorImageDestroy(native);
 	return -(i64)handle;
 #else
-	return -0xff;
+    NSBitmapImageRep* representation = NSBitmapImageRep_initWithBitmapData(
+		&data, res.width, res.height, 8, channels, (channels == 4), false,
+		NSCalibratedRGBColorSpace, NSBitmapFormatAlphaNonpremultiplied,
+		res.width * channels, 8 * channels
+	);
+
+    NSImage* image = NSImage_initWithSize(NSMakeSize(res.width, res.height));
+    NSImage_addRepresentation(image, (NSImageRep*)representation);
+
+    NSCursor* cursor = NSCursor_initWithImage(image, NSMakePoint(0, 0));
+
+    release(image);
+    release(representation);
+	return -(i64)cursor;
 #endif
 }
 F_TRAITS(inline)
@@ -2826,6 +2894,8 @@ void siapp_cursorFree(siCursorType cursor) {
 	DestroyCursor((HCURSOR)handle);
 #elif defined(SIAPP_PLATFORM_API_X11)
 	XFreeCursor(SI_ROOT_WINDOW->display, handle);
+#else
+	release((NSCursor*)handle);
 #endif
 }
 
@@ -3044,6 +3114,13 @@ void siapp_mouseShow(b32 show) {
 
 		XDefineCursor(win->display, win->hwnd, win->__x11BlankCursor);
 	}
+#else
+	if (show) {
+		NSCursor_unhide();
+	}
+	else {
+		NSCursor_hide();
+	}
 #endif
 }
 
@@ -3098,6 +3175,15 @@ usize siapp_clipboardTextGet(char* outBuffer, usize capacity) {
 	XFree(allocatedStr);
 
 	return len;
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	char* str = NSPasteboard_stringForType(NSPasteboard_generalPasteboard(), NSPasteboardTypeString);
+	usize len = si_min(si_string_len(str), capacity);
+
+	memcpy(outBuffer, str, len);
+	outBuffer[len] = '\0';
+
+	si_string_free(str);
+	return len;
 #endif
 }
 b32 siapp_clipboardTextSet(cstring text) {
@@ -3131,6 +3217,13 @@ b32 siapp_clipboardTextSet(cstring text) {
 
     XSetSelectionOwner(win->display, CLIPBOARD, None, CurrentTime);
     return true;
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	SILICON_ARRAY_PTR = si_salloc(512);
+	siArray(NSPasteboardType) array = si_array_init((NSPasteboardType[]){NSPasteboardTypeString}, sizeof(NSPasteboardType), 1);
+
+	NSPasteBoard_declareTypes(NSPasteboard_generalPasteboard(), array, nil);
+	b32 res = NSPasteBoard_setString(NSPasteboard_generalPasteboard(), text, NSPasteboardTypeString);
+	return res;
 #endif
 }
 usize siapp_clipboardTextLen(void) {
@@ -3172,6 +3265,11 @@ usize siapp_clipboardTextLen(void) {
 	XFree(allocatedStr);
 
 	return size;
+#else
+	char* str = NSPasteboard_stringForType(NSPasteboard_generalPasteboard(), NSPasteboardTypeString);
+	usize len = si_string_len(str);
+	si_string_free(str);
+	return len;
 #endif
 }
 
@@ -4692,7 +4790,7 @@ void siapp_drawRectF(siWindow* win, siVec4 rect, siColor color) {
 	switch (win->renderType & SI_RENDERING_BITS) {
 		case SI_RENDERING_OPENGL: {
 			siWinRenderingCtxOpenGL* gl = &win->render.opengl;
-			SI_STOPIF(gl->vertexCounter + 4 > gl->maxVertexCount, si_printf("dd\n"); siapp_windowRender(win));
+			SI_STOPIF(gl->vertexCounter + 4 > gl->maxVertexCount, siapp_windowRender(win));
 
 			f32 x1 = i32ToNDCX(rect.x, gl->size.width); // TODO(EimaMei): Optimize i32ToNDCX. SIMD MAYBE?
 			f32 y1 = i32ToNDCY(rect.y, gl->size.height);
@@ -5480,11 +5578,16 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 		NSOpenGLPFAColorSize, 24,
 		NSOpenGLPFAAlphaSize, 8,
 		NSOpenGLPFADepthSize, 24,
-		NSOpenGLPFAStencilSize, 8,
+		NSOpenGLPFAStencilSize, glInfo.stencilSize,
+		NSOpenGLPFASampleBuffers, glInfo.sampleBuffers,
+		NSOpenGLPFAAuxBuffers, glInfo.auxBuffers,
 		NSOpenGLPFAOpenGLProfile, NSOpenGLProfileVersion4_1Core,
-		0,
+		(glInfo.stereo) ? NSOpenGLPFAStereo : 0,
+		0
 	};
 	NSOpenGLPixelFormat* format = NSOpenGLPixelFormat_initWithAttributes(defaultAttribs);
+	SI_ASSERT_NOT_NULL(format);
+
 	NSOpenGLContext* context = NSOpenGLContext_initWithFormat(format, nil);
 	NSOpenGLContext_setView(context, NSWindow_contentView(win->hwnd));
 	NSView_setLayerContentsPlacement(NSOpenGLContext_view(context), NSViewLayerContentsPlacementTopLeft);
@@ -5823,27 +5926,29 @@ b32 siapp_OpenGLCurrentContextExSet(rawptr window, rawptr context) {
 b32 siapp_windowCPUInit(siWindow* win, u32 maxTexCount, siArea maxTexRes) {
 	SI_ASSERT_NOT_NULL(win);
 	siWinRenderingCtxCPU* cpu = &win->render.cpu;
-	cpu->size = win->originalSize;
-	cpu->maxSize = siapp_screenGetCurrentSize();
+
+	siArea size = siapp_screenGetCurrentSize();
+	cpu->size = win->e.windowSize;
 	cpu->fps = 0;
 
 #if defined(SIAPP_PLATFORM_API_X11)
 	cpu->bitmap = XCreateImage(
 		win->display, DefaultVisual(win->display, XDefaultScreen(win->display)),
 		DefaultDepth(win->display, XDefaultScreen(win->display)),
-        ZPixmap, 0, (char*)cpu->buffer, cpu->size.width, cpu->size.height,
+        ZPixmap, 0, (char*)cpu->buffer, size.width,  size.height,
 		32, 0
 	);
 	SI_STOPIF(cpu->bitmap == nil, return false);
-	cpu->buffer = (siByte*)calloc(cpu->maxSize.width * cpu->maxSize.height, 4);
+	cpu->buffer = (siByte*)calloc(size.width * size.height, 4);
 #elif defined(SIAPP_PLATFORM_API_COCOA)
-	cpu->buffer = (siByte*)calloc(cpu->maxSize.width * cpu->maxSize.height, 3);
+	cpu->buffer = (siByte*)calloc(size.width * size.height, 3);
 	cpu->redraw = false;
 	cpu->boundsMask = si_simd256_setI32(cpu->size.width, cpu->size.height, cpu->size.width, cpu->size.height);
 #endif
 	SI_ASSERT_NOT_NULL(cpu->buffer);
 	win->atlas = siapp_textureAtlasMake(win, maxTexRes, maxTexCount, SI_RESIZE_DEFAULT);
 
+	siapp__resizeWindow(win, cpu->size.width, cpu->size.height);
 	return true;
 }
 /* */
@@ -5857,10 +5962,10 @@ void siapp_windowCPURender(siWindow* win) {
 #else
 	NSBitmapImageRep* rep = NSBitmapImageRep_initWithBitmapData(
 		&cpu->buffer, cpu->size.width, cpu->size.height, 8, 3, false, false,
-		"NSDeviceRGBColorSpace", 0,
+		NSDeviceRGBColorSpace, 0,
 		cpu->size.width * 3, 24
 	);
-	id image = NSAlloc(SI_NS_CLASSES[NS_IMAGE_CODE]);
+	id image = NSAlloc(objc_getClass("NSImage"));
 	NSImage_addRepresentation(image, rep);
 
 	NSView* view = NSWindow_contentView(win->hwnd);

@@ -20,6 +20,9 @@ b32 stopRenderingWin2 = false;
 // Fix the issue with trying to close both windows for GL
 // improve instancding for laptop, especially trying to draw more text
 // add a way to check how much memory you can take
+// transformed cursor returns back to normal when it returns to the og window
+// NSString_to_char memory leaks???
+// replace release with dealloc??
 
 int main(void) {
 
@@ -28,7 +31,7 @@ int main(void) {
 		SI_AREA(0, 0),
 		SI_WINDOW_DEFAULT | SI_WINDOW_OPTIMAL_SIZE
 	);
-	siapp_windowRendererMake(win, SI_RENDERING_CPU, 1, SI_AREA(1024, 1024), 2);
+	siapp_windowRendererMake(win, SI_RENDERING_OPENGL, 1, SI_AREA(1024, 1024), 2);
 	siapp_windowBackgroundSet(win, SI_RGB(128, 0, 0));
 
 	siDropEvent drops[2];
@@ -37,7 +40,7 @@ int main(void) {
 	i32 widthHalf = win->originalSize.width / 2;
 
 	for_range (i, 0, countof(drops)) {
-		siapp_windowDragAreaMake(
+		siapp_windowDragAreaMake( // NOTE(EimaMei): Update this on windows and linux.
 			win,
 			SI_RECT(widthHalf * i, 0, widthHalf, win->originalSize.height),
 			&drops[i]
@@ -59,8 +62,8 @@ int main(void) {
 
 	siCursorType curCursor = SI_CURSOR_DEFAULT,
 				 newCursor = customCursor;
-	u32 curRender = SI_RENDERING_CPU,
-		newRender = SI_RENDERING_OPENGL;
+	u32 curRender = SI_RENDERING_OPENGL,
+		newRender = SI_RENDERING_CPU;
 
 #if DISABLE_SECOND_WINDOW != 1
 #if !defined(SIAPP_PLATFORM_API_COCOA)
