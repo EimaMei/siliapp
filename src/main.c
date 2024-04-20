@@ -26,6 +26,10 @@ b32 stopRenderingWin2 = false;
 
 int main(void) {
 
+<<<<<<< Updated upstream
+=======
+	siapp_OpenGLVersionSet(4, 1);
+>>>>>>> Stashed changes
 	siWindow* win = siapp_windowMake(
 		"Example window | ĄČĘĖĮŠŲ | 「ケケア」",
 		SI_AREA(0, 0),
@@ -62,8 +66,8 @@ int main(void) {
 
 	siCursorType curCursor = SI_CURSOR_DEFAULT,
 				 newCursor = customCursor;
-	u32 curRender = SI_RENDERING_OPENGL,
-		newRender = SI_RENDERING_CPU;
+	u32 curRender = SI_RENDERING_CPU,
+		newRender = SI_RENDERING_OPENGL;
 
 #if DISABLE_SECOND_WINDOW != 1
 #if !defined(SIAPP_PLATFORM_API_COCOA)
@@ -79,6 +83,7 @@ int main(void) {
 #endif
 #endif
 
+<<<<<<< Updated upstream
 	usize i = 0;
 	while (true) {
 		siArea area = siapp_screenGetAvailableResolution(i);
@@ -111,6 +116,9 @@ SI_GOTO_LABEL(init)
 	//siFont f = siapp_fontLoad(win, "res/calibri.ttf", 64);
 
 	//siText woah = siapp_textLoad(textAlloc, &f, "Vardan tos, Lietuvos");
+=======
+	siImage img = siapp_imageLoad(&win->atlas, "res/castle.jpg");
+>>>>>>> Stashed changes
 
 	while (siapp_windowIsRunning(win) && !siapp_windowKeyClicked(win, SK_ESC)) {
 		const siWindowEvent* e =  siapp_windowUpdate(win, false);
@@ -169,6 +177,31 @@ SI_GOTO_LABEL(init)
 					break;
 				}
 
+<<<<<<< Updated upstream
+=======
+				case SK_DOWN: {
+					siapp_clipboardTextSet("DOWN");
+					break;
+				}
+
+				case SK_W: {
+					static b32 show = false;
+					siapp_mouseShow(show);
+					show ^= true;
+					break;
+				}
+				case SK_T: {
+					siapp_windowCursorSet(win, newCursor);
+					si_swap(curCursor, newCursor);
+					break;
+				}
+				case SK_C: {
+					siapp_windowRendererChange(win, newRender);
+					img = siapp_imageLoad(&win->atlas, "res/castle.jpg");
+					si_swap(curRender, newRender);
+					continue;
+				}
+>>>>>>> Stashed changes
 			}
 		}
 

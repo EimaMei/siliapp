@@ -45,13 +45,13 @@ DOCUMENTATION
 	some kind of 'text'. Such arguments are noted if their type denotation is
 	A FULLY CAPITALIZED KEYWORD. This is a general list of the keywords, their meanings
 	and examples of them:
-		- TYPE - argument is just the type name (siString, usize, rawptr).
-		- TYPE* - same as TYPE except it's a pointer to it (siString*, usize*, rawptr*).
-		- INT - argument can be any signed integer (50, -250LL, ISIZE_MAX).
-		- UINT - argument can be any unsigned integer (50, 250ULL, USIZE_MAX).
-		- EXPRESSION - argument is just some kind of valid C value (60, "hello", SI_RGB(255, 255, 255)).
-		- NAME - argument has to be regular text with _no_ enquotes (test, var, len).
-		- ANYTHING - argument can be literally anything.
+		- TYPE - the type name (siString, usize, rawptr).
+		- TYPE* - the pointer of a type (siString*, usize*, rawptr*).
+		- INT - a signed integer (50, -250LL, ISIZE_MAX).
+		- UINT - an unsigned integer (50, 250ULL, USIZE_MAX).
+		- EXPRESSION - any legal C value (60, "hello", SI_RGB(255, 255, 255)).
+		- NAME - regular text with no enquotes (test, var, len).
+		- ANYTHING - anything.
 
 ===========================================================================
 MACROS
@@ -64,26 +64,26 @@ MACROS
 	```
 
 	- SI_NO_ASSERTIONS_IN_HEADER - 'SI_ASSERT()' and its other variations do not
-	check for the assertion, essentially doing nothing, meaning any given expression
-	will evaluate to nothing and not crash the app. Slightly increases the performance
-	of the app, but should only be enabled for release builds, as any error in
-	the code will then not get caught and will most likely crash the app somewhere
-	else further down. Note that these functions work as intended outside the
-	"sili.h" file.
+	check for the assertion inside of the 'sili.h' file, meaning any given expression
+	from sili functions will evaluate to nothing and not crash the app if the
+	assertion equals false. May increase the performance of the program, but should
+	only be enabled for release builds, as any errors in the code will then not get
+	caught and will most likely crash the app somewhere else further down.
 
-	- SI_NO_ASSERTIONS - same as 'SI_NO_ASSERTIONS' except 'SI_ASSERT()' becomes
-	also not usable outside "sili.h".
+	- SI_NO_ASSERTIONS - same as 'SI_NO_ASSERTIONS' except all of the assertion
+	functions continue to be unusable outside of 'sili.h', disabling the functionality
+	entirely.
 
 
-	- SI_NO_ALLOC_DEBUG_INFO - by default 'si_malloc()' and similar functions take
-	__FILE__ and __LINE__ arguments for debugging. For performance reasons, you
-	can disable this.
+	- SI_NO_ALLOC_DEBUG_INFO - 'si_malloc()' and similar functions take
+	'__FILE__' and '__LINE__' arguments under the hood for debugging. For performance
+	reasons, you can disable this.
 
 	- SI_RELEASE_MODE - same as defining both 'SI_NO_ASSERTIONS' and 'SI_NO_ALLOC_DEBUG_INFO'.
 
 	- SI_NO_ERROR_STRUCT - by default 'siErrorInfo' that contains an i32 error code,
 	u64 time in UTC+0 and a cstring of the last function that edited the structure.
-	Defining this macro makes siErrorInfo only contain an error code.
+	Defining this macro makes 'siErrorInfo' only contain an error code.
 
 	- SI_NO_INLINE_ASM - disables any usage of inline ASM in "sili.h".
 
@@ -91,7 +91,8 @@ MACROS
 	Intel syntax is used.
 
 	- SI_NO_WINDOWS_H - disables the inclusion of <windows.h> inside "sili.h."
-	Will cause 'undefined' compiler errors in some parts of the code.
+	Will cause 'undefined' compiler errors in some parts of the code without a
+	proper replacement.
 
 ===========================================================================
 CREDITS
@@ -785,6 +786,10 @@ SI_STATIC_ASSERT(sizeof(nil) == sizeof(void*));
 	| Endian swap macros   |
 	========================
 */
+
+/* little - EXPRESSION | big - EXPRESSION
+ * Returns one of the specified values depending on the system's endianness. */
+#define SI_ENDIAN_VALUE(little, big) ((SI_HOST_IS_LITTLE_ENDIAN) ? (little) : (big))
 
 /* x - u16
  * Swaps the endianess of a 16-bit number. */

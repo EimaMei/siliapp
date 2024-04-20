@@ -451,7 +451,6 @@ typedef struct {
 	b32 redraw;
 #endif
 	siArea size;
-	siInt32_4x boundsMask;
 
 	siColor bgColor;
 	u32 fps;
@@ -1634,10 +1633,10 @@ HRESULT IDropTarget_Drop(IDropTarget* target, IDataObject* pDataObj,
 }
 #endif
 
-#define SI__CHANNEL_COUNT 4
 
 #elif defined(SIAPP_PLATFORM_API_X11)
 
+#define SI__CHANNEL_COUNT 3
 intern Display* SI_X11_DISPLAY = nil;
 
 intern Atom WM_DELETE_WINDOW,
@@ -3383,11 +3382,104 @@ b32 siapp_clipboardTextSet(cstring text) {
 	return status;
 #elif defined (SIAPP_PLATFORM_API_X11)
 	siapp__x11CheckStartup();
+	// clipboard still doesn't work for some reason.
 
 	siWindow* win = SI_ROOT_WINDOW;
-    XSetSelectionOwner((Display*)win->display, CLIPBOARD, (Window)win->hwnd, CurrentTime);
 
-    XSetSelectionOwner(win->display, CLIPBOARD, None, CurrentTime);
+    XSetSelectionOwner(win->display, CLIPBOARD, win->hwnd, CurrentTime);
+    XConvertSelection(win->display, CLIPBOARD_MANAGER, SAVE_TARGETS, None, win->hwnd, CurrentTime);
+
+    for (;;) {
+        XEvent event;
+
+        XNextEvent(win->display, &event);
+        if (event.type != SelectionRequest)
+			return true;
+
+		const XSelectionRequestEvent* request = &event.xselectionrequest;
+
+		XEvent reply = { SelectionNotify };
+
+		char* selectionString = NULL;
+		const Atom formats[] = { UTF8_STRING, XA_STRING };
+		const i32 formatCount = sizeof(formats) / sizeof(formats[0]);
+
+		selectionString = (char*)text;
+
+		if (request->target == TARGETS) {
+			const Atom targets[] = { TARGETS,
+									MULTIPLE,
+									UTF8_STRING,
+									XA_STRING };
+
+			XChangeProperty(win->display,
+							request->requestor,
+							request->property,
+							4,
+							32,
+							PropModeReplace,
+							(u8*) targets,
+							sizeof(targets) / sizeof(targets[0]));
+
+			reply.xselection.property = request->property;
+		}
+
+		if (request->target == MULTIPLE) {
+
+			Atom* targets;
+
+			Atom actualType;
+			i32 actualFormat;
+			u64 count, bytesAfter;
+
+			XGetWindowProperty(win->display, request->requestor, request->property, 0, INT64_MAX, False, ATOM_PAIR,  &actualType, &actualFormat, &count, &bytesAfter, (u8**) &targets);
+
+			u64 i;
+			for (i = 0;  i < count;  i += 2) {
+				i32 j;
+
+				for (j = 0;  j < formatCount;  j++) {
+					if (targets[i] == formats[j])
+						break;
+				}
+
+				if (j < formatCount)
+				{
+					XChangeProperty(win->display,
+									request->requestor,
+									targets[i + 1],
+									targets[i],
+									8,
+									PropModeReplace,
+									(u8 *) selectionString,
+									si_cstrLen(selectionString));
+				}
+				else
+					targets[i + 1] = None;
+			}
+
+			XChangeProperty(win->display,
+							request->requestor,
+							request->property,
+							ATOM_PAIR,
+							32,
+							PropModeReplace,
+							(u8*) targets,
+							count);
+
+			XFree(targets);
+
+			reply.xselection.property = request->property;
+		}
+
+		reply.xselection.display = request->display;
+		reply.xselection.requestor = request->requestor;
+		reply.xselection.selection = request->selection;
+		reply.xselection.target = request->target;
+		reply.xselection.time = request->time;
+
+		XSendEvent(win->display, request->requestor, False, 0, &reply);
+	}
     return true;
 #elif defined(SIAPP_PLATFORM_API_COCOA)
 	SILICON_ALLOCATOR = si_salloc(512);
@@ -6023,6 +6115,7 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 		SIAPP_ERROR_MSGBOX_GL(gl->programID, "Failed to link programID.");
 		return false;
 	}
+	glUseProgram(gl->programID);
 
 	GL_BUFFER_MAKE(SI_VBO_POS, gl->vertices,  sizeof(siVec3) * 4 * maxDrawCount);
 	GL_BUFFER_MAKE(SI_VBO_CLR, gl->colors,    sizeof(siVec4) * 4 * maxDrawCount);
@@ -6238,18 +6331,29 @@ b32 siapp_windowCPUInit(siWindow* win, u32 maxTexCount, siArea maxTexRes) {
 	cpu->fps = 0;
 
 #if defined(SIAPP_PLATFORM_API_X11)
-	cpu->bitmap = XCreateImage(
-		win->display, DefaultVisual(win->display, XDefaultScreen(win->display)),
-		DefaultDepth(win->display, XDefaultScreen(win->display)),
-        ZPixmap, 0, (char*)cpu->buffer, size.width,  size.height,
-		32, 0
-	);
-	SI_STOPIF(cpu->bitmap == nil, return false);
-	cpu->buffer = (siByte*)calloc(size.width * size.height, 4);
+	cpu->buffer = (siByte*)calloc(cpu->size.width * cpu->size.height, 3);
+
+	XImage* image = malloc(sizeof(XImage));
+	SI_STOPIF(image == nil, return false);
+	image->xoffset = 0;
+    image->width = cpu->size.width;
+    image->height = cpu->size.height;
+    image->format = ZPixmap;
+    image->data = (char*)cpu->buffer;
+    image->byte_order = SI_ENDIAN_VALUE(LSBFirst, MSBFirst);
+    image->bitmap_unit = 32;
+    image->bitmap_bit_order = SI_ENDIAN_VALUE(LSBFirst, MSBFirst);
+    image->bitmap_pad = 32;
+    image->depth = 24;
+    image->bytes_per_line = 0;
+    image->bits_per_pixel = 24;
+
+	b32 res = XInitImage(image);
+	SI_STOPIF(res == false, return false);
+	cpu->bitmap = image;
 #elif defined(SIAPP_PLATFORM_API_COCOA)
 	cpu->buffer = (siByte*)calloc(size.width * size.height, 3);
 	cpu->redraw = false;
-	cpu->boundsMask = si_simd256_setI32(cpu->size.width, cpu->size.height, cpu->size.width, cpu->size.height);
 #endif
 	SI_ASSERT_NOT_NULL(cpu->buffer);
 	win->atlas = siapp_textureAtlasMake(win, maxTexRes, maxTexCount, SI_RESIZE_DEFAULT);
@@ -6263,7 +6367,6 @@ void siapp_windowCPURender(siWindow* win) {
 	siWinRenderingCtxCPU* cpu = &win->render.cpu;
 
 #if defined(SIAPP_PLATFORM_API_X11)
-	cpu->bitmap->data = (char*)cpu->buffer;
 	XPutImage(win->display, win->hwnd, XDefaultGC(win->display, XDefaultScreen(win->display)), cpu->bitmap, 0, 0, 0, 0, cpu->size.width, cpu->size.height);
 #else
 	NSBitmapImageRep* rep = NSBitmapImageRep_initWithBitmapData(
@@ -6290,6 +6393,7 @@ void siapp_windowCPUDestroy(siWindow* win) {
 	SI_ASSERT_NOT_NULL(win);
 	siWinRenderingCtxCPU* cpu = &win->render.cpu;
 	free(cpu->buffer);
+	free(cpu->bitmap);
 	siapp_textureAtlasFree(win->atlas);
 }
 
