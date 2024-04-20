@@ -3018,8 +3018,8 @@ void sigl_loadOpenGL_4_5(void);
 /* Loads every OpenGL 4.6 function. */
 void sigl_loadOpenGL_4_6(void);
 
-/* Loads every 'wgl' function on Windows (that are enabled through the macros). */
-void sigl_loadOpenGLWindows(void);
+/* Loads every OS extension function available for the system. */
+void sigl_loadOpenGLOS(void);
 
 
 #if !defined(__gl_h_) && !defined(__GL_H__) && !defined(SIGL_NO_GL_1_1_H_FUNCS)
@@ -4530,6 +4530,10 @@ extern void glXGetSelectedEvent( Display *dpy, GLXDrawable drawable,
 
 /* GLX 1.4 and later */
 extern __GLXextFuncPtr glXGetProcAddress(const GLubyte *procname);
+
+#ifndef GLX_EXT_swap_control
+SIGL_FUNC_DECLARE(void, glXSwapIntervalEXT, Display *dpy, GLXDrawable drawable, int interval);
+#endif
 #endif
 
 #undef SIGL_FUNC_DECLARE
@@ -5526,6 +5530,10 @@ SIGL_FUNC_DECLARE(BOOL, wglWaitForSbcOML, HDC hdc, INT64 target_sbc, INT64* ust,
 
 #endif
 
+#if SIGL_SYSTEM_IS_UNIX
+SIGL_FUNC_DECLARE(void, glXSwapIntervalEXT, Display *dpy, GLXDrawable drawable, int interval);
+#endif
+
 #if SIGL_SYSTEM_IS_WINDOWS
 	#define SIGL_PROC_LOAD(name) (wglGetProcAddress(#name))
 #else
@@ -5535,7 +5543,7 @@ SIGL_FUNC_DECLARE(BOOL, wglWaitForSbcOML, HDC hdc, INT64 target_sbc, INT64* ust,
 #define SIGL_PROC_DEF(name) \
     {  /* NOTE(EimaMei): A glued-together solution to get around win32's horrible
           design of using PROC instead of void* as the return type. May or may
-          not break strict-aliasing, I don't even know anymore. */ \
+          not break strict-aliasing, I don't even know or care anymore. */ \
         union { siglOsFuncType proc; name##SIPROC actualType; } value; \
         value.proc = SIGL_PROC_LOAD(name); \
         name = value.actualType; \
@@ -5565,9 +5573,7 @@ void sigl_loadOpenGLAll(void) {
 	sigl_loadOpenGL_4_5();
 	sigl_loadOpenGL_4_6();
 
-#if SIGL_SYSTEM_IS_WINDOWS
-	sigl_loadOpenGLWindows();
-#endif
+	sigl_loadOpenGLOS();
 }
 void sigl_loadOpenGLAllVer(int major, int minor, int osFuncs) {
 	int ogMinor = minor;
@@ -5605,9 +5611,7 @@ void sigl_loadOpenGLAllVer(int major, int minor, int osFuncs) {
 	}
 
 	if (osFuncs) {
-#if SIGL_SYSTEM_IS_WINDOWS
-		sigl_loadOpenGLWindows();
-#endif
+		sigl_loadOpenGLOS();
 	}
 }
 void sigl_loadOpenGL_1_2(void) {
@@ -6391,7 +6395,7 @@ void sigl_loadOpenGL_4_6(void) {
 #endif /* !SIGL_NO_GL_4_6_H_FUNCS */
 }
 
-void sigl_loadOpenGLWindows(void) {
+void sigl_loadOpenGLOS(void) {
 #if SIGL_SYSTEM_IS_WINDOWS && !defined(SIGL_NO_WGL_H_FUNCS)
 
 #if defined(WGL_VERSION_1_0) && defined(SIGL_NO_WINDOWS_H)
@@ -6628,7 +6632,10 @@ SIGL_PROC_DEF(wglWaitForMscOML);
 SIGL_PROC_DEF(wglWaitForSbcOML);
 #endif
 
+#elif SIGL_SYSTEM_IS_UNIX
+SIGL_PROC_DEF(glXSwapIntervalEXT);
 #endif
+
 }
 
 #undef SIGL_FUNC_DECLARE

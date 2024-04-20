@@ -27,6 +27,12 @@
 	#define SI_NO_RELEASE - do not define release (just use NSRelease)
 */
 
+#if !defined(__APPLE__) && !defined(__MACH__)
+#ifndef SILICON_H
+#define SILICON_H
+#endif
+#endif
+
 #ifndef SILICON_H
 #define SILICON_H
 
@@ -1524,7 +1530,6 @@ SICDEF sicArray(sicString) _NSSearchPathForDirectoriesInDomains(NSSearchPathDire
 #define NSUserName _NSUserName
 SICDEF sicString _NSUserName(void);
 
-#endif /* ifndef SILICON_H */
 
 #ifdef SILICON_IMPLEMENTATION
 
@@ -3167,6 +3172,7 @@ sicString sic_stringInit(const char* str) {
 
 	return res;
 }
+#endif /* SILICON_ARRAY_IMPLEMENTATION */
 
 #undef NSSearchPathForDirectoriesInDomains
 #undef NSUserName
@@ -3203,7 +3209,6 @@ sicString _NSUserName(void) {
 
 #define NSSearchPathForDirectoriesInDomains _NSSearchPathForDirectoriesInDomains
 
-#endif
-
 
 #endif /* SILICON_IMPLEMENTATION */
+#endif /* SILICON_H */

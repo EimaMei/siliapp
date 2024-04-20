@@ -134,7 +134,9 @@ extern "C" {
 
 typedef SI_ENUM(b32, siWindowArg) {
 	SI_WINDOW_CENTER                  = SI_BIT(0),
-	SI_WINDOW_FULLSCREEN              = SI_BIT(1),
+	SI_WINDOW_OPTIMAL_SIZE            = SI_BIT(1),
+	SI_WINDOW_FULLSCREEN              = SI_BIT(2),
+
 	SI_WINDOW_BORDERLESS              = SI_BIT(2),
 	SI_WINDOW_RESIZABLE               = SI_BIT(3),
 
@@ -143,8 +145,7 @@ typedef SI_ENUM(b32, siWindowArg) {
 	SI_WINDOW_HIDDEN                  = SI_BIT(6),
 
 	SI_WINDOW_SCALING                 = SI_BIT(7),
-	SI_WINDOW_OPTIMAL_SIZE            = SI_BIT(8),
-	SI_WINDOW_KEEP_ASPECT_RATIO       = SI_BIT(9),
+	SI_WINDOW_KEEP_ASPECT_RATIO       = SI_BIT(8),
 
 	SI_WINDOW_DEFAULT                 = SI_WINDOW_CENTER | SI_WINDOW_RESIZABLE | SI_WINDOW_KEEP_ASPECT_RATIO,
 	SI_WINDOW_DESKTOP                 = SI_WINDOW_FULLSCREEN | SI_WINDOW_BORDERLESS,
@@ -1226,7 +1227,9 @@ void siapp__resizeWindow(siWindow* win, i32 width, i32 height) {
 		case SI_RENDERING_CPU: {
 			siWinRenderingCtxCPU* cpu = &win->render.cpu;
 			cpu->size = SI_AREA(width, height);
+#if defined(SIAPP_PLATFORM_API_COCOA)
 			cpu->redraw = true;
+#endif
 
 			if (win->arg & SI_WINDOW_SCALING) {
 				win->scaleFactor = SI_VEC2(
@@ -2797,24 +2800,27 @@ b32 siapp_windowVSyncSet(siWindow* win, b32 value) {
 
 	switch (win->renderType & SI_RENDERING_BITS) {
 		case SI_RENDERING_OPENGL: {
-			siWinRenderingCtxOpenGL* gl = &win->render.opengl;
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	#error ""
 #elif defined(SIAPP_PLATFORM_API_X11)
-	#error ""
+			glXSwapIntervalEXT(win->display, win->hwnd, value & 1);
 #elif defined(SIAPP_PLATFORM_API_COCOA)
+			siWinRenderingCtxOpenGL* gl = &win->render.opengl;
 			GLint swapInt = value & 1;
 			NSOpenGLContext_setValues(gl->context, &swapInt, NSOpenGLContextParameterSwapInterval);
-			break;
 #endif
+			break;
 		}
 		case SI_RENDERING_CPU: {
 			siWinRenderingCtxCPU* cpu = &win->render.cpu;
 #if defined(SIAPP_PLATFORM_API_COCOA)
 			NSScreen* screen = NSScreen_mainScreen();
 			NSInteger fps = NSScreen_maximumFramesPerSecond(screen);
-			cpu->fps = (1.0f / fps) * 1000;
+#elif defined (SIAPP_PLATFORM_API_X11)
+			XRRScreenConfiguration* config = XRRGetScreenInfo(win->display, win->hwnd);
+			i32 fps = XRRConfigCurrentRate(config);
 #endif
+			cpu->fps = (1.0f / fps) * 1000;
 			break;
 		}
 	}
@@ -3247,8 +3253,12 @@ siArea siapp_screenGetAvailableResolution(usize index) {
 
 	return SI_AREA(mode.dmPelsWidth, mode.dmPelsHeight);
 #elif defined(SIAPP_PLATFORM_API_X11)
-	SI_PANIC_MSG("No X11 equivalent is available yet.");
-	return SI_AREA(-1, -1);
+	u32 count;
+	XRRScreenSize* sizes = XRRSizes(SI_X11_DISPLAY, DefaultScreen(SI_X11_DISPLAY), (i32*)&count);
+	SI_STOPIF(index >= count, return SI_AREA(-1, -1));
+
+	XRRScreenSize res = sizes[count - 1 - index];
+	return SI_AREA(res.width, res.height);
 #elif defined(SIAPP_PLATFORM_API_COCOA)
 	CGDirectDisplayID mainDisplayId = CGMainDisplayID();
 	CFArrayRef modes = CGDisplayCopyAllDisplayModes(mainDisplayId, nil);
@@ -3612,13 +3622,13 @@ b32 siapp_dropEventPollEntry(siDropHandle* handle, siDropEntry* entry) {
 	si_utf16ToUtf8Str(&out, curPtr, &entry->len);
 	handle->curIndex += 1;
 #elif defined(SIAPP_PLATFORM_API_X11)
-	if (handle->__x11Data[handle->curIndex] == '\0') {
+	if (handle->__x11Data[handle->__index] == '\0') {
 		XFree(handle->__x11Data);
 		return false;
 	}
 
-	handle->curIndex += countof("file://") - 1;
-	char* data = &handle->__x11Data[handle->curIndex];
+	handle->__index += countof("file://") - 1;
+	char* data = &handle->__x11Data[handle->__index];
 	usize len = 0;
 
 	while (true) {
@@ -3632,7 +3642,7 @@ b32 siapp_dropEventPollEntry(siDropHandle* handle, siDropEntry* entry) {
 
 			len += 1;
 			data += 2;
-			handle->curIndex += 2;
+			handle->__index += 2;
 			continue;
 		}
 		entry->path[len] = data[len];
@@ -3640,7 +3650,7 @@ b32 siapp_dropEventPollEntry(siDropHandle* handle, siDropEntry* entry) {
 	}
 
 	entry->len = len;
-	handle->curIndex += len + 2;
+	handle->__index += len + 2;
 #elif defined(SIAPP_PLATFORM_API_COCOA)
 	if (handle->__index >= handle->len) {
 		free((size_t*)handle->__cocoaData - 1);
@@ -4208,6 +4218,9 @@ siSearchHandle siapp_fileManagerOpen(siSearchConfig config) {
 	handle.__index = 0;
 
 	return handle;
+#else
+	SI_UNUSED(config);
+	return (siSearchHandle){0};
 #endif
 }
 
@@ -4226,8 +4239,11 @@ b32 siapp_searchPollEntry(siSearchHandle* handle, siSearchEntry* entry) {
 	entry->len = len;
 
 	handle->__index += 1;
-#endif
 	return true;
+#else
+	SI_UNUSED(handle); SI_UNUSED(entry);
+	return false;
+#endif
 }
 
 F_TRAITS(inline)
@@ -5889,6 +5905,7 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 	pfd.cColorBits   = 32;
 	pfd.cDepthBits   = 24;
 	pfd.cStencilBits = 8;
+	#error "CPU and add stencil bits as well as aux"
 
 	i32 format = ChoosePixelFormat(win->hdc, &pfd);
 	SIAPP_ERROR_CHECK(format == 0, "ChoosePixelFormat");
@@ -5945,12 +5962,12 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 	}
 
 	usize fbIndex = 0;
-	i32 bufSamples;
+	u32 bufSamples;
 
 	for_range (i, 0, fbCount) {
-		glXGetFBConfigAttrib(win->display, fbList[i], GLX_SAMPLE_BUFFERS, &bufSamples);
+		glXGetFBConfigAttrib(win->display, fbList[i], GLX_SAMPLE_BUFFERS, (i32*)&bufSamples);
 
-		if ((u32)bufSamples == glInfo.sampleBuffers) {
+		if (bufSamples == glInfo.sampleBuffers) {
 			fbIndex = i;
 			break;
 		}
@@ -6169,7 +6186,6 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(siOpenGLIndices) * maxDrawCount, indices, GL_STATIC_DRAW);
 	si_allocatorFree(indicesAlloc);
 
-	glUseProgram(gl->programID);
 	gl->uniformTexture = glGetUniformLocation(gl->programID, "textures");
 	gl->uniformMvp = glGetUniformLocation(gl->programID, "mvp");
 	glUniformMatrix4fv(gl->uniformMvp, maxDrawCount, GL_FALSE, gl->matrices->m);
@@ -6301,7 +6317,7 @@ b32 siapp_OpenGLCurrentContextSet(const siWindow* win) {
 	SI_ASSERT_NOT_NULL(win);
 	SI_ASSERT_MSG((win->renderType & SI_RENDERING_BITS) == SI_RENDERING_OPENGL, "The window does not have OpenGL initialized.");
 
-	return siapp_OpenGLCurrentContextExSet(win->hwnd, win->render.opengl.context);
+	return siapp_OpenGLCurrentContextExSet((rawptr)win->hwnd, win->render.opengl.context);
 }
 b32 siapp_OpenGLCurrentContextExSet(rawptr window, rawptr context) {
 	SI_ASSERT_NOT_NULL(window);
@@ -6310,7 +6326,7 @@ b32 siapp_OpenGLCurrentContextExSet(rawptr window, rawptr context) {
 
 	b32 res = true;
 #if defined(SIAPP_PLATFORM_API_X11)
-	res = glXMakeCurrent(<DISPLAY>, (Drawable)window, (GLXContext)context);
+	res = glXMakeCurrent(SI_X11_DISPLAY, (Drawable)window, (GLXContext)context);
 #elif defined(SIAPP_PLATFORM_API_WIN32)
 	res = wglMakeCurrent(window, context);
 #elif defined(SIAPP_PLATFORM_API_COCOA)
@@ -6331,7 +6347,7 @@ b32 siapp_windowCPUInit(siWindow* win, u32 maxTexCount, siArea maxTexRes) {
 	cpu->fps = 0;
 
 #if defined(SIAPP_PLATFORM_API_X11)
-	cpu->buffer = (siByte*)calloc(cpu->size.width * cpu->size.height, 3);
+	cpu->buffer = (siByte*)calloc(size.width * size.height, 3);
 
 	XImage* image = malloc(sizeof(XImage));
 	SI_STOPIF(image == nil, return false);
@@ -6342,7 +6358,7 @@ b32 siapp_windowCPUInit(siWindow* win, u32 maxTexCount, siArea maxTexRes) {
     image->data = (char*)cpu->buffer;
     image->byte_order = SI_ENDIAN_VALUE(LSBFirst, MSBFirst);
     image->bitmap_unit = 32;
-    image->bitmap_bit_order = SI_ENDIAN_VALUE(LSBFirst, MSBFirst);
+    image->bitmap_bit_order = image->byte_order;
     image->bitmap_pad = 32;
     image->depth = 24;
     image->bytes_per_line = 0;
@@ -6367,7 +6383,11 @@ void siapp_windowCPURender(siWindow* win) {
 	siWinRenderingCtxCPU* cpu = &win->render.cpu;
 
 #if defined(SIAPP_PLATFORM_API_X11)
-	XPutImage(win->display, win->hwnd, XDefaultGC(win->display, XDefaultScreen(win->display)), cpu->bitmap, 0, 0, 0, 0, cpu->size.width, cpu->size.height);
+	XPutImage(
+		win->display, win->hwnd,
+		XDefaultGC(win->display, XDefaultScreen(win->display)), cpu->bitmap,
+		0, 0, 0, 0, cpu->size.width, cpu->size.height
+	);
 #else
 	NSBitmapImageRep* rep = NSBitmapImageRep_initWithBitmapData(
 		&cpu->buffer, cpu->size.width, cpu->size.height, 8, 3, false, false,
@@ -6403,8 +6423,6 @@ siMessageBoxResult siapp_messageBox(cstring title, cstring message,
 		siMessageBoxButton buttons, siMessageBoxIcon icon) {
 	return siapp_messageBoxEx(nil, title, message, buttons, icon);
 }
-
-void test(NSModalResponse response) { si_printf("wow: %i\n", response); }
 
 siMessageBoxResult siapp_messageBoxEx(const siWindow* win, cstring title,
 		cstring message, siMessageBoxButton buttons, siMessageBoxIcon icon) {
@@ -6559,7 +6577,7 @@ siMessageBoxResult siapp_messageBoxEx(const siWindow* win, cstring title,
 	si_printf("%s: %s\n", title, message);
 	return 0;
 #endif
-
+	SI_UNUSED(win); SI_UNUSED(buttons); SI_UNUSED(icon);
 }
 
 #endif /* SIAPP_IMPLEMENTATION */
