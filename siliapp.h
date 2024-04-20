@@ -92,7 +92,6 @@ extern "C" {
 	#include <X11/cursorfont.h>
 	#include <X11/Xcursor/Xcursor.h>
 	#include <X11/extensions/Xrandr.h>
-    #include <pwd.h>
 	#define SIAPP_PLATFORM_API_X11
 #elif defined(SI_SYSTEM_WINDOWS)
 	#define NOMINMAX            1
@@ -132,9 +131,6 @@ extern "C" {
 	#endif
 #endif
 
-#ifndef SI_MAX_PATH_LEN
-	#define SI_MAX_PATH_LEN 260 // TODO RELPACE
-#endif
 
 typedef SI_ENUM(b32, siWindowArg) {
 	SI_WINDOW_CENTER                  = SI_BIT(0),
@@ -301,7 +297,7 @@ typedef SI_ENUM(u32, siEventTypeEnum) {
 	SI_EVENT_WINDOW_MOVE,
 	SI_EVENT_WINDOW_FOCUS,
 
-	SI_EVENT_COUNT = SI_EVENT_WINDOW_FOCUS
+	SI_EVENT_COUNT
 };
 
 typedef struct {
@@ -495,18 +491,30 @@ typedef struct {
 
 	siCursorType cursor;
 	b32 cursorSet;
+
+	rawptr dndHead;
+	rawptr dndPrev;
 #if defined(SIAPP_PLATFORM_API_X11)
 	Cursor __x11BlankCursor;
-	rawptr __x11DndHead;
-	rawptr __x11DndPrev;
 #endif
 } siWindow;
 
 
+
 typedef struct {
-	siSiliStr* items;
+	/* Actual length of the path. */
 	usize len;
-} siSearchResult;
+	/* */
+	char path[SI_MAX_PATH_LEN];
+} siSearchEntry;
+
+typedef struct {
+	/* */
+	u32 len;
+
+	u32 __index;
+	rawptr __data;
+} siSearchHandle;
 
 typedef struct {
 	cstring name;
@@ -526,7 +534,7 @@ typedef struct {
 	usize filetypesLen;
 } siSearchConfig;
 
-#define SIAPP_SEARCH_DEFAULT ((siSearchConfig){ \
+#define SI_SEARCH_DEFAULT ((siSearchConfig){ \
 	"Select a File", 0, nil, \
 	(siSearchFilterSpec[1]){{"All Files", "*.*"}}, 1 \
 })
@@ -624,7 +632,7 @@ typedef SI_ENUM(i32, siMessageBoxButton) {
 	SI_MESSAGE_BOX_YES_NO,
 	SI_MESSAGE_BOX_YES_NO_CANCEL,
 	SI_MESSAGE_BOX_RETRY_CANCEL,
-	SI_MEESAGE_BOX_CANCEL_TRY_CONTINUE,
+	SI_MESSAGE_BOX_CANCEL_TRY_CONTINUE,
 	SI_MESSAGE_BOX_HELP,
 
 	SI_MESSAGE_BOX_LEN
@@ -646,7 +654,8 @@ typedef SI_ENUM(i32, siMessageBoxResult) {
 	SI_MESSAGE_BOX_RESULT_YES,
 	SI_MESSAGE_BOX_RESULT_NO,
 	SI_MESSAGE_BOX_RESULT_TRY_AGAIN,
-	SI_MESSAGE_BOX_RESULT_CONTINUE
+	SI_MESSAGE_BOX_RESULT_CONTINUE,
+	SI_MESSAGE_BOX_RESULT_HELP
 };
 
 
@@ -667,6 +676,10 @@ typedef struct {
 	siRect rect;
 	char* data;
 	struct siDropEvent* next;
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	siRect rect;
+	rawptr data;
+	struct siDropEvent* next;
 #endif
 	siDropState state;
 } siDropEvent;
@@ -685,11 +698,12 @@ typedef struct {
 
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	STGMEDIUM stgm;
-	u32 curIndex;
 #elif defined(SIAPP_PLATFORM_API_X11)
 	char* __x11Data;
-	u32 curIndex;
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	char** __cocoaData;
 #endif
+	u32 __index;
 } siDropHandle;
 
 
@@ -835,8 +849,9 @@ siSiliStr siapp_usernameGet(void);
 
 /* A open file dialog gets launched for the user to pick the allowed files depending on the
 config. The paths gets written into the allocator. */
-siSearchResult siapp_fileManagerOpen(siAllocator* alloc, siSearchConfig config); // TODO(EimaMei): Rework this function to use the entry system.
-
+siSearchHandle siapp_fileManagerOpen(siSearchConfig config); // TODO(EimaMei): Rework this function to use the entry system.
+/* */
+b32 siapp_searchPollEntry(siSearchHandle* handle, siSearchEntry* entry);
 
 /* Creates a static string, with tis contents being "%APPDATA%\\<folderName>" */
 siSiliStr siapp_appDataPathMake(cstring folderName);
@@ -1038,9 +1053,8 @@ siMessageBoxResult siapp_messageBox(cstring title, cstring message,
 /* Opens an OS message box with the specified tittle, message, buttons and icons.
  * If 'win' is not NULL, the message box window becomes a child window of it.
  * Returns the exact button that was selected. */
-siMessageBoxResult siapp_messageBoxEx(const siWindow* win, cstring title, usize titleLen,
-		cstring message, usize messageLen, siMessageBoxButton buttons,
-		siMessageBoxIcon icon);
+siMessageBoxResult siapp_messageBoxEx(const siWindow* win, cstring title,
+		cstring message, siMessageBoxButton buttons, siMessageBoxIcon icon);
 
 
 #if defined(SIAPP_IMPLEMENTATION)
@@ -1158,7 +1172,12 @@ intern u32 SI_WINDOWS_NUM = 0;
 
 F_TRAITS(inline)
 b32 siapp__collideRectPoint(siRect r, siPoint p) {
-	return (p.x >= r.x &&  p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height);
+	return (
+		p.x >= r.x &&
+		p.x <= r.x + r.width &&
+		p.y >= r.y &&
+		p.y <= r.y + r.height
+	);
 }
 
 
@@ -1671,7 +1690,9 @@ void siapp__x11CheckStartup(void) {
 	WM_DELETE_WINDOW = XInternAtom(SI_X11_DISPLAY, "WM_DELETE_WINDOW", True);
 }
 #elif defined(SIAPP_PLATFORM_API_COCOA)
-	NSApplication* NSApp = nil;
+
+NSApplication* NSApp = nil;
+siDropEvent* curNode = nil;
 
 b32 si__osxWindowClose(NSWindow* self) {
 	siWindow* win = nil;
@@ -1691,18 +1712,117 @@ NSSize si__osxWindowResize(void* self, SEL sel, NSSize frameSize) {
 }
 
 NSSize si__osxWindowFullscreen(void* self, SEL sel, NSSize frameSize) {
-	si_printf("test2\n");
 	return si__osxWindowResize(self, sel, frameSize);
 }
 
-NSRect si__osxTest(void* self, SEL sel, NSWindow* window, NSRect newFrame) {
-	si_printf("test\n");
+NSRect si__osxTest(id self, SEL sel, NSWindow* window, NSRect newFrame) {
 	si__osxWindowResize(self, sel, newFrame.size);
 	return newFrame;
 	SI_UNUSED(window);
 }
 b32 si__osxAcceptsFirstResponder(void) { si_printf("yes\n"); return true; }
 b32 si__osxPerformKeyEquivalent(void) { si_printf("yues2\n"); return true; }
+
+NSDragOperation si__osxDraggingEntered(id self, SEL sel, id sender) {
+	siWindow* win = nil;
+	object_getInstanceVariable(self, "siWindow", (void*)&win);
+	SI_ASSERT_NOT_NULL(win);
+
+	NSPoint nspos = NSDraggingInfo_draggingLocation(sender);
+	siPoint pos = SI_POINT(nspos.x, nspos.y);
+
+	siDropEvent* node = win->dndHead;
+    while (node != nil) {
+		if (siapp__collideRectPoint(node->rect, pos)) {
+			break;
+		}
+		node = (siDropEvent*)node->next;
+	}
+	win->e.type.mouseMove = true;
+	win->e.mouse = pos;
+
+	SI_STOPIF(!node, return NSDragOperationNone);
+	node->state = SI_DRAG_ENTER;
+	curNode = node;
+
+	return NSDragOperationCopy;
+	SI_UNUSED(sel);
+}
+
+NSDragOperation si__osxDraggingUpdated(id self, SEL sel, id sender) {
+	siWindow* win = nil;
+	object_getInstanceVariable(self, "siWindow", (void*)&win);
+	SI_ASSERT_NOT_NULL(win);
+
+	NSPoint nspos = NSDraggingInfo_draggingLocation(sender);
+	siPoint pos = SI_POINT(nspos.x, nspos.y);
+
+	siDropEvent* node = win->dndHead;
+    while (node != nil) {
+		if (siapp__collideRectPoint(node->rect, pos)) {
+			break;
+		}
+		node = (siDropEvent*)node->next;
+	}
+	win->e.type.mouseMove = true;
+	win->e.mouse = pos;
+
+	if (curNode != nil && curNode != node) {
+		curNode->state = SI_DRAG_LEAVE;
+		curNode = nil;
+	}
+	SI_STOPIF(!node, return NSDragOperationNone);
+	node->state = (curNode == nil) ? SI_DRAG_ENTER : SI_DRAG_OVER;
+	curNode = node;
+
+	return NSDragOperationCopy;
+	SI_UNUSED(sel);
+}
+
+b32 si__osxPrepareForDragOperation(void) { return true; }
+
+b32 si__osxPerformDragOperation(id self, SEL sel, id sender) {
+	siWindow* win = nil;
+	object_getInstanceVariable(self, "siWindow", (void*)&win);
+	SI_ASSERT_NOT_NULL(win);
+
+	NSPoint nspos = NSDraggingInfo_draggingLocation(sender);
+	siPoint pos = SI_POINT(nspos.x, nspos.y);
+
+	siDropEvent* node = win->dndHead;
+    while (node != nil) {
+		if (siapp__collideRectPoint(node->rect, pos)) {
+			break;
+		}
+		node = (siDropEvent*)node->next;
+	}
+	win->e.type.mouseMove = true;
+	win->e.mouse = pos;
+
+	SI_STOPIF(!node, return false);
+	node->data = sender;
+	node->state = SI_DRAG_DROP;
+
+	return true;
+	SI_UNUSED(sel);
+}
+
+void si__osxDraggingEnded(id self, SEL sel, id sender) {
+	siWindow* win = nil;
+	object_getInstanceVariable(self, "siWindow", (void*)&win);
+	SI_ASSERT_NOT_NULL(win);
+
+	NSPoint nspos = NSDraggingInfo_draggingLocation(sender);
+	siPoint pos = SI_POINT(nspos.x, nspos.y);
+
+	win->e.type.mouseMove = true;
+	win->e.mouse = pos;
+
+	SI_STOPIF(curNode == nil, return);
+	curNode->state = SI_DRAG_LEAVE;
+	curNode = nil;
+	SI_UNUSED(sel);
+}
 
 #define SI__CHANNEL_COUNT 3
 
@@ -1908,12 +2028,13 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 	win->imageColor = SI_VEC4(1, 1, 1, 1);
 	win->renderType = SI_RENDERING_UNSET;
 	win->textColor = SI_VEC4(1, 1, 1, 1);
+	win->dndHead = (rawptr)USIZE_MAX;
 
 #if defined(SIAPP_PLATFORM_API_COCOA)
 	if (NSApp == nil) {
 		NSApp = NSApplication_sharedApplication();
 		NSApplication_setActivationPolicy(NSApp, NSApplicationActivationPolicyRegular);
-		si_func_to_SEL_with_name(SI_DEFAULT, "windowShouldClose", (void*)si__osxWindowClose);
+		si_func_to_SEL_with_name("NSObject", "windowShouldClose", (void*)si__osxWindowClose);
 	}
 #endif
 
@@ -2008,7 +2129,6 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 	SI_WINDOWS_NUM += 1;
 	SI_ROOT_WINDOW = win;
 	win->__x11BlankCursor = 0;
-	win->__x11DndHead = (rawptr)USIZE_MAX;
 #elif defined(SIAPP_PLATFORM_API_COCOA)
 
 	NSWindow* hwnd = NSWindow_init(
@@ -2017,9 +2137,6 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 		NSBackingStoreBuffered, false
 	);
 	NSWindow_setTitle(hwnd, name);
-	NSWindow_makeKeyAndOrderFront(hwnd, nil);
-	NSWindow_setIsVisible(hwnd, true);
-	NSWindow_makeMainWindow(hwnd);
 
 	Class delegateClass = objc_allocateClassPair(objc_getClass("NSObject"), "WindowDelegate", 0);
 	b32 res = class_addIvar(
@@ -2028,12 +2145,21 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 		"L"
 	);
 	SI_ASSERT(res);
-	res = class_addMethod(delegateClass, sel_registerName("windowWillResize:toSize:"), (IMP)si__osxWindowResize, "{NSSize=ff}@:{NSSize=ff}");
-	SI_ASSERT(res);
-	res = class_addMethod(delegateClass, sel_registerName("window:willUseFullScreenContentSize:"), (IMP)si__osxWindowFullscreen, "{NSSize=ff}@:{NSSize=ff}");
-	SI_ASSERT(res);
-	res = class_addMethod(delegateClass, sel_registerName("windowWillUseStandardFrame:defaultFrame:"), (IMP)si__osxTest, "{NSRect=ffff}@:@{NSRect=ffff}");
-	SI_ASSERT(res);
+#define si_class_def(_class, name, func, encode) do { \
+	b32 res = class_addMethod(_class, sel_registerName(name), (IMP)func, encode); \
+	SI_ASSERT(res); \
+} while(0)
+
+	si_class_def(delegateClass, "windowWillResize:toSize:", si__osxWindowResize, "{NSSize=ff}@:{NSSize=ff}");
+	si_class_def(delegateClass, "window:willUseFullScreenContentSize:", si__osxWindowFullscreen, "{NSSize=ff}@:{NSSize=ff}");
+	si_class_def(delegateClass, "windowWillUseStandardFrame:defaultFrame:", si__osxTest, "{NSRect=ffff}@:@{NSRect=ffff}");
+
+	si_class_def(delegateClass, "draggingEntered:", si__osxDraggingEntered, "l@:@");
+	si_class_def(delegateClass, "draggingUpdated:", si__osxDraggingUpdated, "l@:@");
+	si_class_def(delegateClass, "draggingExited:", si__osxDraggingEnded, "v@:@");
+	si_class_def(delegateClass, "draggingEnded:", si__osxDraggingEnded, "v@:@");
+	si_class_def(delegateClass, "prepareForDragOperation:", si__osxPrepareForDragOperation, "B@:@");
+	si_class_def(delegateClass, "performDragOperation:", si__osxPerformDragOperation, "B@:@");
 
 	id delegate = NSInit(NSAlloc(delegateClass));
 	object_setInstanceVariable(delegate, "siWindow", win);
@@ -2221,7 +2347,7 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 					out->type.mouseMove = true;
 					out->mouse = pos;
 
-					siDropEvent* node = win->__x11DndHead;
+					siDropEvent* node = win->dndHead;
                     while (node != nil) {
 						if (siapp__collideRectPoint(node->rect, pos)) {
 							break;
@@ -2467,67 +2593,72 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 	}
 	#undef SI_CHECK_WIN
 #else
-	if (!await) {
-		while (true) {
-			NSEvent* event = NSApplication_nextEventMatchingMask(
-				NSApp, NSEventMaskAny,
-				NSDate_distantPast(),
-				NSDefaultRunLoopMode, true
-			);
-			SI_STOPIF(event == nil, break);
-
-			NSApplication_sendEvent(NSApp, event);
-		}
+	if (await) {
+		NSEvent* event = NSApplication_nextEventMatchingMask(
+			NSApp, NSEventMaskAny,
+			NSDate_distantFuture(),
+			NSDefaultRunLoopMode, true
+		);
+		NSApplication_sendEvent(NSApp, event);
 	}
 
-	NSEvent* event = NSApplication_nextEventMatchingMask(
-		NSApp, NSEventMaskAny,
-		NSDate_distantFuture(),
-		NSDefaultRunLoopMode, true
-	);
-	NSApplication_sendEvent(NSApp, event);
+	while (true) {
+		NSEvent* event = NSApplication_nextEventMatchingMask(
+			NSApp, NSEventMaskAny, nil,
+			NSDefaultRunLoopMode, true
+		);
 
-	switch (NSEvent_type(event)) {
-		case NSEventTypeKeyDown: {
-			siKeyType key = siapp_osKeyToSili(NSEvent_keyCode(event));
+		if (event == nil) {
+			break;
+		}
+		else if (NSEvent_window(event) != win->hwnd) {
+			NSApplication_postEvent(NSApp, event, false);
+			break;
+		}
 
-			out->type.keyPress = true;
-			out->curKey = key;
+		switch (NSEvent_type(event)) {
+			case NSEventTypeKeyDown: {
+				siKeyType key = siapp_osKeyToSili(NSEvent_keyCode(event));
 
-			siKeyState* keyState = &out->keys[key];
-			keyState->clicked = !keyState->pressed;
-			keyState->pressed = true;
-			keyState->released = false;
+				out->type.keyPress = true;
+				out->curKey = key;
 
-			if (keyState->clicked) {
+				siKeyState* keyState = &out->keys[key];
+				keyState->clicked = !keyState->pressed;
+				keyState->pressed = true;
+				keyState->released = false;
+
+				if (keyState->clicked) {
+					SK_TO_INT(out->keys[SK__EVENT]) |= SI_BIT(7);
+					out->__private.keyCache[out->__private.keyCacheLen % 16] = key;
+					out->__private.keyCacheLen += 1;
+				}
+
+				cstring buf = NSEvent_characters(event);
+				usize len = si_cstrLen(buf);
+				memcpy(out->charBuffer, buf, len);
+				out->charBufferLen = len;
+				out->charBuffer[out->charBufferLen] = '\0';
+				break;
+			}
+			case NSEventTypeKeyUp: {
+				siKeyType key = siapp_osKeyToSili(NSEvent_keyCode(event));
+
+				out->type.keyRelease = true;
+				out->curKey = key;
+
+				siKeyState* keyState = &out->keys[key];
+				keyState->clicked = false;
+				keyState->pressed = false;
+				keyState->released = true;
+
 				SK_TO_INT(out->keys[SK__EVENT]) |= SI_BIT(7);
 				out->__private.keyCache[out->__private.keyCacheLen % 16] = key;
 				out->__private.keyCacheLen += 1;
+				break;
 			}
-
-			cstring buf = NSEvent_characters(event);
-			usize len = si_cstrLen(buf);
-			memcpy(out->charBuffer, buf, len);
-			out->charBufferLen = len;
-			out->charBuffer[out->charBufferLen] = '\0';
-			break;
 		}
-		case NSEventTypeKeyUp: {
-			siKeyType key = siapp_osKeyToSili(NSEvent_keyCode(event));
-
-			out->type.keyRelease = true;
-			out->curKey = key;
-
-			siKeyState* keyState = &out->keys[key];
-			keyState->clicked = false;
-			keyState->pressed = false;
-			keyState->released = true;
-
-			SK_TO_INT(out->keys[SK__EVENT]) |= SI_BIT(7);
-			out->__private.keyCache[out->__private.keyCacheLen % 16] = key;
-			out->__private.keyCacheLen += 1;
-			break;
-		}
+		NSApplication_sendEvent(NSApp, event);
 	}
 
 	if ((win->renderType & SI_RENDERING_BITS) == SI_RENDERING_CPU && win->render.cpu.redraw) {
@@ -2628,6 +2759,7 @@ void siapp_windowClose(siWindow* win) {
 	}
 #elif defined(SIAPP_PLATFORM_API_COCOA)
 	NSWindow_close(win->hwnd);
+	NSRelease(win->hwnd);
 #endif
 
 	free(win);
@@ -2650,6 +2782,13 @@ void siapp_windowShow(const siWindow* win, b32 show) {
 	}
 	else {
 		XUnmapWindow(win->display, win->hwnd);
+	}
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	if (show) {
+		NSWindow_orderFront(win->hwnd, nil);
+	}
+	else {
+		NSWindow_orderOut(win->hwnd, nil);
 	}
 #endif
 }
@@ -2674,7 +2813,7 @@ b32 siapp_windowVSyncSet(siWindow* win, b32 value) {
 			siWinRenderingCtxCPU* cpu = &win->render.cpu;
 #if defined(SIAPP_PLATFORM_API_COCOA)
 			NSScreen* screen = NSScreen_mainScreen();
-			NSInteger fps = ((NSInteger(*)(id, SEL))objc_msgSend)(screen, sel_registerName("maximumFramesPerSecond"));
+			NSInteger fps = NSScreen_maximumFramesPerSecond(screen);
 			cpu->fps = (1.0f / fps) * 1000;
 #endif
 			break;
@@ -2699,13 +2838,13 @@ b32 siapp_windowEventPoll(const siWindow* win, siEventTypeEnum* out) {
 	u32 bit = *out;
 	b32 res = false;
 
-	while (res == false && bit <= SI_EVENT_COUNT) {
+	while (res == false && bit < SI_EVENT_COUNT) {
 		res = event & SI_BIT(bit);
 		bit += 1;
 	}
 	*out = bit;
 
-	return bit != 0 && bit <= SI_EVENT_COUNT;
+	return bit != 0 && bit < SI_EVENT_COUNT;
 }
 
 
@@ -2995,10 +3134,10 @@ void siapp_windowDragAreaMake(siWindow* win, siRect rect, siDropEvent* out) {
 	OleInitialize(nil);
 	RegisterDragDrop(subHwnd, (LPDROPTARGET)&out->target);
 #elif defined(SIAPP_PLATFORM_API_X11)
-	if (win->__x11DndHead == nil) {
-		win->__x11DndHead = win->__x11DndPrev = out;
+	if (win->dndHead == nil) {
+		win->dndHead = win->dndPrev = out;
 	}
-	else if (SI_UNLIKELY(win->__x11DndHead == (rawptr)USIZE_MAX)) {
+	else if (SI_UNLIKELY(win->dndHead == (rawptr)USIZE_MAX)) {
 		XdndAware         = XInternAtom(SI_X11_DISPLAY, "XdndAware",         False);
 		XdndTypeList      = XInternAtom(SI_X11_DISPLAY, "XdndTypeList",      False);
 		XdndSelection     = XInternAtom(SI_X11_DISPLAY, "XdndSelection",     False);
@@ -3021,17 +3160,40 @@ void siapp_windowDragAreaMake(siWindow* win, siRect rect, siDropEvent* out) {
 			PropModeReplace, &version, 1
 		);
 
-		win->__x11DndHead = win->__x11DndPrev = out;
+		win->dndHead = win->dndPrev = out;
 	}
 
-	siDropEvent* prev = win->__x11DndPrev;
+	siDropEvent* prev = win->dndPrev;
 	prev->next = (struct siDropEvent*)out;
-	win->__x11DndPrev = out;
+	win->dndPrev = out;
 
 	out->rect = rect;
 	out->state = 0;
 	out->next = nil;
 	out->data = nil;
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	if (win->dndHead == nil) {
+		win->dndHead = win->dndPrev = out;
+	}
+	else if (SI_UNLIKELY(win->dndHead == (rawptr)USIZE_MAX)) {
+		SILICON_ALLOCATOR = si_salloc(64);
+		NSPasteboardType types[] = {NSPasteboardTypeURL, NSPasteboardTypeFileURL, NSPasteboardTypeString};
+
+		siArray(NSPasteboardType) array = sic_arrayInit(types, sizeof(id), countof(types));
+		NSWindow_registerForDraggedTypes(win->hwnd, array);
+
+		SILICON_ALLOCATOR_RESET();
+
+		win->dndHead = win->dndPrev = out;
+	}
+
+	siDropEvent* prev = win->dndPrev;
+	prev->next = (struct siDropEvent*)out;
+	win->dndPrev = out;
+
+	out->rect = rect;
+	out->state = 0;
+	out->next = nil;
 #endif
 }
 void siapp_windowDragAreaEnd(siWindow* win, siDropEvent* event) {
@@ -3039,13 +3201,13 @@ void siapp_windowDragAreaEnd(siWindow* win, siDropEvent* event) {
 	RevokeDragDrop(event.subHwnd);
 	RemoveWindowSubclass(event.subHwnd, &WndProcDropFile, 0);
 	OleUninitialize();
-#elif defined (SIAPP_PLATFORM_API_X11)
-	siDropEvent* node = win->__x11DndHead,
+#elif defined(SIAPP_PLATFORM_API_X11) || defined(SIAPP_PLATFORM_API_COCOA)
+	siDropEvent* node = win->dndHead,
 			    *prevNode = nil;
     while (node != nil) {
 		if (node == event) {
 			if (prevNode == nil) {
-				win->__x11DndHead = node->next;
+				win->dndHead = node->next;
 				break;
 			}
 			prevNode->next = node->next;
@@ -3055,7 +3217,7 @@ void siapp_windowDragAreaEnd(siWindow* win, siDropEvent* event) {
 		prevNode = node;
 	    node = (siDropEvent*)node->next;
 	}
-	SI_STOPIF(event == win->__x11DndPrev, win->__x11DndPrev = node->next);
+	SI_STOPIF(event == win->dndPrev, win->dndPrev = node->next);
 
 	*event = (siDropEvent){0};
 #endif
@@ -3087,6 +3249,16 @@ siArea siapp_screenGetAvailableResolution(usize index) {
 	return SI_AREA(mode.dmPelsWidth, mode.dmPelsHeight);
 #elif defined(SIAPP_PLATFORM_API_X11)
 	SI_PANIC_MSG("No X11 equivalent is available yet.");
+	return SI_AREA(-1, -1);
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	CGDirectDisplayID mainDisplayId = CGMainDisplayID();
+	CFArrayRef modes = CGDisplayCopyAllDisplayModes(mainDisplayId, nil);
+    usize count = CFArrayGetCount(modes);
+	SI_STOPIF(index >= count, return SI_AREA(-1, -1));
+
+	CGDisplayModeRef mode = (CGDisplayModeRef)CFArrayGetValueAtIndex(modes, count - 1 - index);
+	return SI_AREA(CGDisplayModeGetWidth(mode), CGDisplayModeGetHeight(mode));
+#else
 	return SI_AREA(-1, -1);
 #endif
 }
@@ -3176,13 +3348,13 @@ usize siapp_clipboardTextGet(char* outBuffer, usize capacity) {
 
 	return len;
 #elif defined(SIAPP_PLATFORM_API_COCOA)
-	char* str = NSPasteboard_stringForType(NSPasteboard_generalPasteboard(), NSPasteboardTypeString);
-	usize len = si_min(si_string_len(str), capacity);
+	sicString str = NSPasteboard_stringForType(NSPasteboard_generalPasteboard(), NSPasteboardTypeString);
+	usize len = si_min(sic_stringLen(str), capacity);
 
 	memcpy(outBuffer, str, len);
 	outBuffer[len] = '\0';
 
-	si_string_free(str);
+	sic_stringFree(str);
 	return len;
 #endif
 }
@@ -3218,11 +3390,13 @@ b32 siapp_clipboardTextSet(cstring text) {
     XSetSelectionOwner(win->display, CLIPBOARD, None, CurrentTime);
     return true;
 #elif defined(SIAPP_PLATFORM_API_COCOA)
-	SILICON_ARRAY_PTR = si_salloc(512);
-	siArray(NSPasteboardType) array = si_array_init((NSPasteboardType[]){NSPasteboardTypeString}, sizeof(NSPasteboardType), 1);
+	SILICON_ALLOCATOR = si_salloc(512);
+	siArray(NSPasteboardType) array = sic_arrayInit((NSPasteboardType[]){NSPasteboardTypeString}, sizeof(NSPasteboardType), 1);
 
 	NSPasteBoard_declareTypes(NSPasteboard_generalPasteboard(), array, nil);
 	b32 res = NSPasteBoard_setString(NSPasteboard_generalPasteboard(), text, NSPasteboardTypeString);
+	SILICON_ALLOCATOR_RESET();
+
 	return res;
 #endif
 }
@@ -3267,8 +3441,8 @@ usize siapp_clipboardTextLen(void) {
 	return size;
 #else
 	char* str = NSPasteboard_stringForType(NSPasteboard_generalPasteboard(), NSPasteboardTypeString);
-	usize len = si_string_len(str);
-	si_string_free(str);
+	usize len = sic_stringLen(str);
+	sic_stringFree(str);
 	return len;
 #endif
 }
@@ -3277,6 +3451,7 @@ usize siapp_clipboardTextLen(void) {
 siDropHandle siapp_dropEventHandle(siDropEvent event) {
 	SI_ASSERT_MSG(event.state == SI_DRAG_DROP, "This function should only get called after a confirmed successful drop.");
 	siDropHandle res;
+	res.__index = 0;
 
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	FORMATETC fmte = {CF_HDROP, nil, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
@@ -3289,7 +3464,6 @@ siDropHandle siapp_dropEventHandle(siDropEvent event) {
 
 	HDROP hdrop = (HDROP)stgm.hGlobal;
 
-	res.curIndex = 0;
 	res.len = DragQueryFileW(hdrop, 0xFFFFFFFF, NULL, 0);
 	res.stgm = stgm;
 end:
@@ -3312,9 +3486,22 @@ end:
 		index += 1;
 	}
 
-	res.curIndex = 0;
 	res.len = len;
 	res.__x11Data = event.data;
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	SILICON_ALLOCATOR = si_salloc(16);
+	siArray(Class) array = sic_arrayInit((Class[]){NSClass(NSURL)}, sizeof(Class), 1);
+
+	usize len = NSDraggingInfo_numberOfValidItemsForDrop(event.data);
+	usize totalAllocSize = sizeof(siArrayHeader) + (sizeof(size_t) + SI_MAX_PATH_LEN) * len;
+	SILICON_ALLOCATOR = malloc(totalAllocSize);
+
+	res.__cocoaData = NSPasteboard_readObjectsForClasses(
+		NSDraggingInfo_draggingPasteboard(event.data), array, nil
+	);
+	res.len = len;
+
+	SILICON_ALLOCATOR_RESET();
 #endif
 	return res;
 }
@@ -3332,8 +3519,6 @@ b32 siapp_dropEventPollEntry(siDropHandle* handle, siDropEntry* entry) {
 	DragQueryFileW(handle->stgm.hGlobal, handle->curIndex, curPtr, 256);
 	si_utf16ToUtf8Str(&out, curPtr, &entry->len);
 	handle->curIndex += 1;
-
-	return true;
 #elif defined(SIAPP_PLATFORM_API_X11)
 	if (handle->__x11Data[handle->curIndex] == '\0') {
 		XFree(handle->__x11Data);
@@ -3364,9 +3549,21 @@ b32 siapp_dropEventPollEntry(siDropHandle* handle, siDropEntry* entry) {
 
 	entry->len = len;
 	handle->curIndex += len + 2;
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	if (handle->__index >= handle->len) {
+		free((size_t*)handle->__cocoaData - 1);
+		return false;
+	}
 
-	return true;
+	siString str = handle->__cocoaData[handle->__index];
+
+	entry->len = sic_arrayLen(str);
+	memcpy(entry->path, str, entry->len);
+	entry->path[entry->len] = '\0';
+
+	handle->__index += 1;
 #endif
+	return true;
 }
 F_TRAITS(inline)
 void siapp_dropEventEnd(siDropEvent* event) {
@@ -3701,6 +3898,8 @@ cstring siapp_osErrToStr(i32 error) {
 		si_dllUnload(handle);
 	}
 	buf[len] = '\0';
+#else
+	SI_UNUSED(error);
 #endif
 
 	return buf;
@@ -3709,9 +3908,11 @@ cstring siapp_osErrToStr(i32 error) {
 
 siSiliStr siapp_usernameGet(void) {
     static char buffer[sizeof(usize) + SI_MAX_PATH_LEN + 1];
-    siAllocator tmp = si_allocatorMakeTmp(buffer, sizeof(buffer));
+	SI_STOPIF(buffer[0] != 0, return buffer + sizeof(usize));
 
-    usize* len = si_mallocItem(&tmp, usize);
+	siAllocator tmp = si_allocatorMakeTmp(buffer, sizeof(buffer));
+	usize* len = si_mallocItem(&tmp, usize);
+
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	u16 resultWide[SI_MAX_PATH_LEN + 1];
 
@@ -3723,16 +3924,17 @@ siSiliStr siapp_usernameGet(void) {
 	siSiliStr str = (siSiliStr)si_utf16ToUtf8Str(&tmp, resultWide, len);
 
 	return str;
-#elif defined(SIAPP_PLATFORM_API_X11)
-    struct passwd* pw = getpwuid(geteuid());
-    *len = si_cstrLen(pw->pw_name);
+#else
+	char* str = (char*)si_allocatorCurPtr(&tmp);
+	getlogin_r(str, sizeof(buffer) - 1 - sizeof(usize));
+	*len = si_cstrLen(str);
 
-    return si_siliStrMakeLen(&tmp, pw->pw_name, *len);
+	return str;
 #endif
 }
 
 
-siSearchResult siapp_fileManagerOpen(siAllocator* alloc, siSearchConfig config) {
+siSearchHandle siapp_fileManagerOpen(siSearchConfig config) {
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	siAllocator* stack = si_allocatorMake(SI_KILO(4));
 	IFileOpenDialog* pfd;
@@ -3826,9 +4028,115 @@ siSearchResult siapp_fileManagerOpen(siAllocator* alloc, siSearchConfig config) 
 	pfd->lpVtbl->Release(pfd);
 
 	return res;
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	NSOpenPanel* panel = NSOpenPanel_openPanel();
+
+	if (config.title != nil) {
+		NSSavePanel_setMessage(panel, config.title);
+	}
+
+	switch (config.options) {
+		case SI_SEARCH_ALLOW_MULTIPLE: {
+			NSOpenPanel_setCanChooseFiles(panel, true);
+			NSOpenPanel_setCanChooseDirectories(panel, false);
+			NSOpenPanel_setAllowsMultipleSelection(panel, true);
+			break;
+		}
+		case SI_SEARCH_FOLDERS_ONLY: {
+			NSOpenPanel_setCanChooseFiles(panel, false);
+			NSOpenPanel_setCanChooseDirectories(panel, true);
+			NSOpenPanel_setAllowsMultipleSelection(panel, false);
+			break;
+		}
+		case SI_SEARCH_FOLDERS_ONLY | SI_SEARCH_ALLOW_MULTIPLE: {
+			NSOpenPanel_setCanChooseFiles(panel, false);
+			NSOpenPanel_setCanChooseDirectories(panel, true);
+			NSOpenPanel_setAllowsMultipleSelection(panel, true);
+			break;
+		}
+	}
+
+	if (config.defaultPath != nil) {
+		NSURL* url = NSURL_fileURLWithPath(config.defaultPath);
+		NSSavePanel_setDirectoryURL(panel, url);
+		NSRelease(url);
+	}
+
+	if (config.filetypes !=  nil) {
+		siAllocator* stack = si_allocatorMake(SI_KILO(3));
+		char* arr[32];
+		usize arrLen = 0;
+
+		for_range (i, 0, config.filetypesLen) {
+			cstring filetype = config.filetypes[i].filetype;
+			usize len = 0;
+			while (true) {
+				char x = filetype[len];
+				len += 1;
+
+				if (x == ';') {
+					arr[arrLen]= si_mallocArray(stack, char, len);
+
+					char* str = arr[arrLen];
+					memcpy(str, filetype, len - 1);
+					str[len - 1] = '\0';
+					arrLen += 1;
+
+					filetype = &filetype[len];
+					len = 0;
+					continue;
+				}
+				else if (x == '\0') {
+					arr[arrLen] = si_mallocArray(stack, char, len);
+
+					char* str = arr[arrLen];
+					memcpy(str, filetype, len - 1);
+					str[len - 1] = '\0';
+					arrLen += 1;
+					break;
+				}
+			}
+		}
+
+		SILICON_ALLOCATOR = si_salloc(768);
+		siArray(char*) value = sic_arrayInit(arr, sizeof(*value), arrLen);
+		NSSavePanel_setAllowedFileTypes(panel, value);
+		SILICON_ALLOCATOR_RESET();
+	}
+
+	NSSavePanel_runModal(panel);
+
+	SILICON_USE_SIARRAY = false;
+	NSArray* urls = (NSArray*)NSOpenPanel_URLs(panel);
+	SILICON_USE_SIARRAY = true;
+
+	siSearchHandle handle;
+	handle.len = NSArray_count(urls);
+	handle.__data = urls;
+	handle.__index = 0;
+
+	return handle;
 #endif
 }
 
+b32 siapp_searchPollEntry(siSearchHandle* handle, siSearchEntry* entry) {
+#if defined(SIAPP_PLATFORM_API_COCOA)
+	if (handle->__index >= handle->len) {
+		return false;
+	}
+
+	NSURL* url = NSArray_objectAtIndex(handle->__data, handle->__index);
+	const char* str = NSURL_path(url);
+	usize len = strlen(str);
+
+	memcpy(entry->path, str, len);
+	entry->path[len] = '\0';
+	entry->len = len;
+
+	handle->__index += 1;
+#endif
+	return true;
+}
 
 F_TRAITS(inline)
 siSiliStr siapp_appDataPathMake(cstring folderName) {
@@ -3858,22 +4166,18 @@ siSiliStr siapp_appDataPathMakeEx(cstring folderName, usize folderNameLen) {
 	siSiliStr username = siapp_usernameGet();
 	usize len = (countof("/home/") - 1) + SI_SILISTR_LEN(username)
 		+ (countof("/.") - 1) + folderNameLen + 1;
-	str = si_siliStrMakeEx(&tmp, "/home/", countof("/home/") - 1, len);
-	char* start = str;
+	str = si_siliStrMakeReserve(&tmp, len);
 
-	start += countof("/home/") - 1;
-	memcpy(start, username, SI_SILISTR_LEN(username));
+	si_snprintf(str, len, "/home/%*s/.%*s", SI_SILISTR_LEN(username), username, folderNameLen, folderName);
+	SI_SILISTR_LEN(str) = len - 1;
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	siSiliStr username = siapp_usernameGet();
+	usize len = (countof("/Users/") - 1) + SI_SILISTR_LEN(username)
+		+ (countof("/Library/Application Support/") - 1) + folderNameLen + 1;
+	str = si_siliStrMakeReserve(&tmp, len);
 
-	start += SI_SILISTR_LEN(username);
-	memcpy(start, "/.", countof("/.") - 1);
-
-	start += countof("/.") - 1;
-	memcpy(start, folderName, folderNameLen);
-
-	memcpy(start, folderName, folderNameLen);
-	memcpy(&start[folderNameLen], "/", 2); /* NOTE(EimaMei): Copies the NULL-terminator too. */
-
-	SI_SILISTR_LEN(str) = len;
+	si_snprintf(str, len, "/Users/%*s/Library/Application Support/%*s", SI_SILISTR_LEN(username), username, folderNameLen, folderName);
+	SI_SILISTR_LEN(str) = len - 1;
 #endif
 
 
@@ -5462,6 +5766,8 @@ const char* GetStringForEnum(GLenum value) {
 			return "UNKNOWN_ENUM";
 	}
 #endif
+	return "N/A";
+	SI_UNUSED(value);
 }
 
 void DebugCallback(GLenum source, GLenum type, GLuint id, GLenum severity,
@@ -5991,12 +6297,13 @@ void siapp_windowCPUDestroy(siWindow* win) {
 F_TRAITS(inline)
 siMessageBoxResult siapp_messageBox(cstring title, cstring message,
 		siMessageBoxButton buttons, siMessageBoxIcon icon) {
-	return siapp_messageBoxEx(nil, title, si_cstrLen(title), message, si_cstrLen(message), buttons, icon);
+	return siapp_messageBoxEx(nil, title, message, buttons, icon);
 }
 
-siMessageBoxResult siapp_messageBoxEx(const siWindow* win, cstring title, usize titleLen,
-		cstring message, usize messageLen, siMessageBoxButton buttons,
-		siMessageBoxIcon icon) {
+void test(NSModalResponse response) { si_printf("wow: %i\n", response); }
+
+siMessageBoxResult siapp_messageBoxEx(const siWindow* win, cstring title,
+		cstring message, siMessageBoxButton buttons, siMessageBoxIcon icon) {
 	SI_ASSERT_NOT_NULL(title);
 	SI_ASSERT_NOT_NULL(message);
 
@@ -6013,7 +6320,7 @@ siMessageBoxResult siapp_messageBoxEx(const siWindow* win, cstring title, usize 
 		case SI_MESSAGE_BOX_YES_NO: flags |= MB_YESNO; break;
 		case SI_MESSAGE_BOX_YES_NO_CANCEL: flags |= MB_YESNOCANCEL; break;
 		case SI_MESSAGE_BOX_RETRY_CANCEL: flags |= MB_RETRYCANCEL; break;
-		case SI_MEESAGE_BOX_CANCEL_TRY_CONTINUE: flags |= MB_CANCELTRYCONTINUE; break;
+		case SI_MESSAGE_BOX_CANCEL_TRY_CONTINUE: flags |= MB_CANCELTRYCONTINUE; break;
 		case SI_MESSAGE_BOX_HELP: flags |= MB_HELP; break;
 	}
 	switch (icon) {
@@ -6033,6 +6340,117 @@ siMessageBoxResult siapp_messageBoxEx(const siWindow* win, cstring title, usize 
 
 	si_allocatorFree(tmp);
 	return res;
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	SI_UNUSED(win);
+
+	NSAlert* alert = NSInit(NSAlloc(NSClass(NSAlert)));
+	NSAlert_setMessageText(alert, title);
+	NSAlert_setInformativeText(alert, message);
+	NSAlertStyle style;
+	switch (icon) {
+		case SI_MESSAGE_BOX_ICON_INFO: style = NSAlertStyleInformational; break;
+		case SI_MESSAGE_BOX_ICON_ERROR: style = NSAlertStyleCritical; break;
+		case SI_MESSAGE_BOX_ICON_WARNING: style = NSAlertStyleWarning; break;
+		case SI_MESSAGE_BOX_ICON_QUESTION: style = NSAlertStyleInformational; break;
+	}
+	NSAlert_setAlertStyle(alert, style);
+
+	switch (buttons) {
+		case SI_MESSAGE_BOX_OK: {
+			NSAlert_addButton(alert, "Ok");
+			break;
+		}
+		case SI_MESSAGE_BOX_OK_CANCEL: {
+			NSAlert_addButton(alert, "Cancel");
+			NSAlert_addButton(alert, "Ok");
+			break;
+		}
+		case SI_MESSAGE_BOX_YES_NO: {
+			NSAlert_addButton(alert, "No");
+			NSAlert_addButton(alert, "Yes");
+			break;
+		}
+		case SI_MESSAGE_BOX_YES_NO_CANCEL: {
+			NSAlert_addButton(alert, "Cancel");
+			NSAlert_addButton(alert, "Yes");
+			NSAlert_addButton(alert, "No");
+			break;
+		}
+
+		case SI_MESSAGE_BOX_RETRY_CANCEL: {
+			NSAlert_addButton(alert, "Cancel");
+			NSAlert_addButton(alert, "Retry");
+			break;
+		}
+
+		case SI_MESSAGE_BOX_CANCEL_TRY_CONTINUE: {
+			NSAlert_addButton(alert, "Cancel");
+			NSAlert_addButton(alert, "Continue");
+			NSAlert_addButton(alert, "Try again");
+			break;
+		}
+
+		case SI_MESSAGE_BOX_HELP: {
+			NSAlert_addButton(alert, "Help");
+			break;
+		}
+	}
+	NSModalResponse response = NSAlert_runModal(alert);
+	NSRelease(alert);
+
+
+	switch (buttons) {
+		case SI_MESSAGE_BOX_OK: {
+			response = (response == NSAlertFirstButtonReturn);
+			break;
+		}
+		case SI_MESSAGE_BOX_OK_CANCEL: {
+			switch (response) {
+				case 1001: response = SI_MESSAGE_BOX_RESULT_OK; break;
+				case 1000: response = SI_MESSAGE_BOX_RESULT_CANCEL; break;
+			}
+			break;
+		}
+		case SI_MESSAGE_BOX_YES_NO: {
+			switch (response) {
+				case 1001: response = SI_MESSAGE_BOX_RESULT_YES; break;
+				case 1000: response = SI_MESSAGE_BOX_RESULT_NO; break;
+			}
+			break;
+		}
+		case SI_MESSAGE_BOX_YES_NO_CANCEL: {
+			switch (response) {
+				case 1001: response = SI_MESSAGE_BOX_RESULT_YES; break;
+				case 1002: response = SI_MESSAGE_BOX_RESULT_NO; break;
+				case 1000: response = SI_MESSAGE_BOX_RESULT_CANCEL; break;
+			}
+			break;
+		}
+
+		case SI_MESSAGE_BOX_RETRY_CANCEL: {
+			switch (response) {
+				case 1001: response = SI_MESSAGE_BOX_RESULT_RETRY; break;
+				case 1000: response = SI_MESSAGE_BOX_RESULT_CANCEL; break;
+			}
+			break;
+		}
+
+		case SI_MESSAGE_BOX_CANCEL_TRY_CONTINUE: {
+			switch (response) {
+				case 1001: response = SI_MESSAGE_BOX_RESULT_CONTINUE; break;
+				case 1002: response = SI_MESSAGE_BOX_RESULT_TRY_AGAIN; break;
+				case 1000: response = SI_MESSAGE_BOX_RESULT_CANCEL; break;
+			}
+			break;
+		}
+
+		case SI_MESSAGE_BOX_HELP: {
+			response = (response == NSAlertFirstButtonReturn) ? SI_MESSAGE_BOX_RESULT_HELP : 0;
+			break;
+		}
+	}
+
+	return response;
 #else
 	si_printf("%s: %s\n", title, message);
 	return 0;

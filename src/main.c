@@ -79,61 +79,96 @@ int main(void) {
 #endif
 #endif
 
+	usize i = 0;
+	while (true) {
+		siArea area = siapp_screenGetAvailableResolution(i);
+		SI_STOPIF(area.width == -1, break);
+		si_printf("%ix%i\n", area.width, area.height);
+		i += 1;
+	}
+
+#if 0
+	siSearchConfig config = SI_SEARCH_DEFAULT;
+	config.filetypes = (siSearchFilterSpec[]){{"Test", "out;mm"}};
+	config.filetypesLen = 1;
+	config.options = SI_SEARCH_ALLOW_MULTIPLE;
+
+	siSearchHandle handle = siapp_fileManagerOpen(config);
+	siSearchEntry search;
+	usize x = 0;
+	si_printf("damn\n");
+	while (siapp_searchPollEntry(&handle, &search)) {
+		si_printf("%i: %s %i\n",  x, search.path, search.len);
+        x += 1;
+	}
+#endif
+
+	siSiliStr username = siapp_appDataPathMake("smm");
+	si_printf("%s | %i\n", username, SI_SILISTR_LEN(username));
+
 	siAllocator* textAlloc = si_allocatorMake(512);
 SI_GOTO_LABEL(init)
-	siImage img = siapp_imageLoad(&win->atlas, "res/castle.jpg");
-	siFont f = siapp_fontLoad(win, "res/calibri.ttf", 64);
+	//siFont f = siapp_fontLoad(win, "res/calibri.ttf", 64);
 
-	siText woah = siapp_textLoad(textAlloc, &f, "Vardan tos, Lietuvos");
+	//siText woah = siapp_textLoad(textAlloc, &f, "Vardan tos, Lietuvos");
 
 	while (siapp_windowIsRunning(win) && !siapp_windowKeyClicked(win, SK_ESC)) {
-		siapp_windowUpdate(win, true);
-		const siWindowEvent* e = siapp_windowEventGet(win);
+		const siWindowEvent* e =  siapp_windowUpdate(win, false);
 
-		if (e->type.windowMove) {
-			si_printf("Window is being moved: %ix%i\n", e->windowPos.x, e->windowPos.y);
-		}
-		else if (e->type.windowResize) {
-			si_printf("Window is being resized: %ix%i\n", e->windowSize.width, e->windowSize.height);
-		}
-		else if (e->type.keyPress) {
-			switch (e->curKey * siapp_windowKeyClicked(win, e->curKey)) {
-				case 0: { break; } /* The key is being pressed but the clicked frame has since passed. */
-				case SK_UP: {
-					char buf[512];
-					usize len = siapp_clipboardTextLen();
-					usize bytesWritten = siapp_clipboardTextGet(buf, sizeof(buf));
+		siEventTypeEnum type = 0;
+		while (siapp_windowEventPoll(win, &type)) {
+			switch (type) {
+				case SI_EVENT_WINDOW_MOVE:
+					si_printf("Window is being moved: %ix%i\n", e->windowPos.x, e->windowPos.y);
+					break;
+				case SI_EVENT_WINDOW_RESIZE:
+					si_printf("Window is being resized: %ix%i\n", e->windowSize.width, e->windowSize.height);
+					break;
+				case SI_EVENT_KEY_PRESS: {
+					switch (e->curKey * siapp_windowKeyClicked(win, e->curKey)) {
+						case 0: { break; } /* The key is being pressed but the clicked frame has since passed. */
+						case SK_UP: {
+							char buf[512];
+							usize len = siapp_clipboardTextLen();
+							usize bytesWritten = siapp_clipboardTextGet(buf, sizeof(buf));
 
-					if (bytesWritten) {
-						si_printf("Clipboard: %s | %i;%i\n", buf, bytesWritten, len);
+							if (bytesWritten) {
+								si_printf("Clipboard: %s | %i;%i\n", buf, bytesWritten, len);
+							}
+							break;
+						}
+						case SK_DOWN: {
+							siapp_clipboardTextSet("DOWN");
+							break;
+						}
+						case SK_W: {
+							static b32 showMouse = false;
+							siapp_mouseShow(showMouse);
+							showMouse ^= true;
+							break;
+						}
+						case SK_H: {
+							static b32 showWindow = false;
+							siapp_windowShow(win, showWindow);
+							showWindow ^= true;
+							break;
+						}
+						case SK_T: {
+							siapp_windowCursorSet(win, newCursor);
+							si_swap(curCursor, newCursor);
+							break;
+						}
+						case SK_C: {
+							//siapp_fontFree(f);
+							si_allocatorReset(textAlloc);
+							siapp_windowRendererChange(win, newRender);
+							si_swap(curRender, newRender);
+							goto init;
+						}
 					}
 					break;
 				}
 
-				case SK_DOWN: {
-					siapp_clipboardTextSet("DOWN");
-					break;
-				}
-
-				case SK_W: {
-					static b32 show = false;
-					siapp_mouseShow(show);
-					show ^= true;
-					break;
-				}
-				case SK_T: {
-					siapp_windowCursorSet(win, newCursor);
-					si_swap(curCursor, newCursor);
-					break;
-				}
-				case SK_C: {
-					siapp_fontFree(f);
-					si_allocatorReset(textAlloc);
-					siapp_windowRendererChange(win, newRender);
-					si_swap(curRender, newRender);
-					goto init;
-					continue;
-				}
 			}
 		}
 
@@ -180,9 +215,8 @@ SI_GOTO_LABEL(init)
 			SI_POINT(widthHalf - length / 2, 50), length, 60,
 			SI_RGB(0, 0, 255)
 		);
-		siapp_drawImage(win, SI_RECT(0, 0, 256, 128), img);
 
-		siapp_drawText(win, woah, SI_POINT(300, 0), 64);
+		//siapp_drawText(win, woah, SI_POINT(300, 0), 64);
 
 		siapp_windowRender(win);
 		siapp_windowSwapBuffers(win);
@@ -192,7 +226,7 @@ SI_GOTO_LABEL(init)
 #endif
 	}
     siapp_cursorFree(customCursor);
-	siapp_fontFree(f);
+	//siapp_fontFree(f);
 
 	for_range (i, 0, countof(drops)) {
 		siapp_windowDragAreaEnd(win, &drops[i]);

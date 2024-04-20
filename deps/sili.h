@@ -1062,6 +1062,11 @@ typedef struct { f32 x1, x2, y1, y2; } siCoordsF32;
 /* */
 typedef struct { u32 x1, x2, y1, y2; } siCoordsU32;
 
+
+#ifndef SI_MAX_PATH_LEN
+	#define SI_MAX_PATH_LEN 260
+#endif
+
 typedef SI_ENUM(u32, siDirection) {
 	SI_DIRECTION_LEFT,
 	SI_DIRECTION_RIGHT
@@ -2197,7 +2202,7 @@ typedef SI_ENUM(i32, siIOType) {
 typedef struct {
 	/* Pointer to the full path. Note that this will be the same as 'baseName'
 	 * if the 'fullPath' flag in 'si_dirPollEntryEx' wasn't set to true. */
-	char path[256];
+	char path[SI_MAX_PATH_LEN];
 	/* Pointer to the base name. */
 	char* baseName;
 	/* Actual length of the path. */
@@ -5700,7 +5705,7 @@ siDirectory si_dirOpen(siAllocator* alloc, cstring path) {
 
 	usize len;
 	siUtf16String widePath = si_utf8ToUtf16Str(stack, path, &len);
-	SI_ASSERT_MSG(len + 4 <= MAX_PATH, "Path is larger than 260 bytes.");
+	SI_ASSERT_MSG(len + 4 <= SI_MAX_PATH_LEN, "Path is larger than 260 bytes.");
 
 	// NOTE(EimaMei): Reason why this works is because 'appendText' is right
 	// after 'widePath' in memory.
