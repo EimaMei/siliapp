@@ -24,13 +24,18 @@ b32 stopRenderingWin2 = false;
 // NSString_to_char memory leaks???
 // replace release with dealloc??
 
+#if 0
+	SI_WINDOW_BORDERLESS              = SI_BIT(2),
+	SI_WINDOW_RESIZABLE               = SI_BIT(3),
+#endif
+
 int main(void) {
 	siWindow* win = siapp_windowMake(
 		"Example window | ĄČĘĖĮŠŲ | 「ケケア」",
 		SI_AREA(0, 0),
-		SI_WINDOW_DEFAULT | SI_WINDOW_OPTIMAL_SIZE
+		SI_WINDOW_DEFAULT | SI_WINDOW_OPTIMAL_SIZE | SI_WINDOW_FULLSCREEN
 	);
-	siapp_windowRendererMake(win, SI_RENDERING_OPENGL, 1, SI_AREA(1024, 1024), 2);
+	siapp_windowRendererMake(win, SI_RENDERING_CPU, 1, SI_AREA(1024, 1024), 2);
 	siapp_windowBackgroundSet(win, SI_RGB(128, 0, 0));
 
 	siDropEvent drops[2];
@@ -61,8 +66,8 @@ int main(void) {
 
 	siCursorType curCursor = SI_CURSOR_DEFAULT,
 				 newCursor = customCursor;
-	u32 curRender = SI_RENDERING_OPENGL,
-		newRender = SI_RENDERING_CPU;
+	u32 curRender = SI_RENDERING_CPU,
+		newRender = SI_RENDERING_OPENGL;
 
 #if DISABLE_SECOND_WINDOW != 1
 #if !defined(SIAPP_PLATFORM_API_COCOA)
@@ -109,7 +114,6 @@ int main(void) {
 	si_printf("%s | %i\n", username, SI_SILISTR_LEN(username));
 
 #endif
-SI_GOTO_LABEL(init)
 	//siFont f = siapp_fontLoad(win, "res/calibri.ttf", 64);
 
 	//siText woah = siapp_textLoad(textAlloc, &f, "Vardan tos, Lietuvos");
@@ -117,80 +121,50 @@ SI_GOTO_LABEL(init)
 	while (siapp_windowIsRunning(win) && !siapp_windowKeyClicked(win, SK_ESC)) {
 		const siWindowEvent* e =  siapp_windowUpdate(win, false);
 
-		siEventTypeEnum type = 0;
-		while (siapp_windowEventPoll(win, &type)) {
-			switch (type) {
-				case SI_EVENT_WINDOW_MOVE:
-					si_printf("Window is being moved: %ix%i\n", e->windowPos.x, e->windowPos.y);
-					break;
-				case SI_EVENT_WINDOW_RESIZE:
-					si_printf("Window is being resized: %ix%i\n", e->windowSize.width, e->windowSize.height);
-					break;
-				case SI_EVENT_KEY_PRESS: {
-					switch (e->curKey * siapp_windowKeyClicked(win, e->curKey)) {
-						case 0: { break; } /* The key is being pressed but the clicked frame has since passed. */
-						case SK_UP: {
-							char buf[512];
-							usize len = siapp_clipboardTextLen();
-							usize bytesWritten = siapp_clipboardTextGet(buf, sizeof(buf));
+		u32 key = e->curKey * siapp_windowKeyClicked(win, e->curKey);
+		switch (key) {
+			case 0: { break; } /* The key is being pressed but the clicked frame has since passed. */
+			case SK_UP: {
+				char buf[512];
+				usize len = siapp_clipboardTextLen();
+				usize bytesWritten = siapp_clipboardTextGet(buf, sizeof(buf));
 
-							if (bytesWritten) {
-								si_printf("Clipboard: %s | %i;%i\n", buf, bytesWritten, len);
-							}
-							break;
-						}
-						case SK_DOWN: {
-							siapp_clipboardTextSet("DOWN");
-							break;
-						}
-						case SK_W: {
-							static b32 showMouse = false;
-							siapp_mouseShow(showMouse);
-							showMouse ^= true;
-							break;
-						}
-						case SK_H: {
-							static b32 showWindow = false;
-							siapp_windowShow(win, showWindow);
-							showWindow ^= true;
-							break;
-						}
-						case SK_T: {
-							siapp_windowCursorSet(win, newCursor);
-							si_swap(curCursor, newCursor);
-							break;
-						}
-						case SK_C: {
-							//siapp_fontFree(f);
-							siapp_windowRendererChange(win, newRender);
-							si_swap(curRender, newRender);
-							goto init;
-						}
-					}
-					break;
+				if (bytesWritten) {
+					si_printf("Clipboard: %s | %i;%i\n", buf, bytesWritten, len);
 				}
-
-				case SK_DOWN: {
-					siapp_clipboardTextSet("DOWN");
-					break;
-				}
-
-				case SK_W: {
-					static b32 show = false;
-					siapp_mouseShow(show);
-					show ^= true;
-					break;
-				}
-				case SK_T: {
-					siapp_windowCursorSet(win, newCursor);
-					si_swap(curCursor, newCursor);
-					break;
-				}
-				case SK_C: {
-					siapp_windowRendererChange(win, newRender);
-					si_swap(curRender, newRender);
-					continue;
-				}
+				break;
+			}
+			case SK_DOWN: {
+				siapp_clipboardTextSet("DOWN");
+				break;
+			}
+			case SK_W: {
+				static b32 showMouse = false;
+				siapp_mouseShow(showMouse);
+				showMouse ^= true;
+				break;
+			}
+			case SK_H: {
+				static b32 showWindow = false;
+				siapp_windowShow(win, showWindow);
+				showWindow ^= true;
+				break;
+			}
+			case SK_F11: {
+				static b32 fullscreen = true;
+				siapp_windowFullscreen(win, fullscreen);
+				fullscreen ^= true;
+				break;
+			}
+			case SK_T: {
+				siapp_windowCursorSet(win, newCursor);
+				si_swap(curCursor, newCursor);
+				break;
+			}
+			case SK_C: {
+				siapp_windowRendererChange(win, newRender);
+				si_swap(curRender, newRender);
+				continue;
 			}
 		}
 

@@ -49,6 +49,7 @@ DOCUMENTATION
 		- TYPE* - the pointer of a type (siString*, usize*, rawptr*).
 		- INT - a signed integer (50, -250LL, ISIZE_MAX).
 		- UINT - an unsigned integer (50, 250ULL, USIZE_MAX).
+		- FUNCTION - the name of any visibly-exposed function without enquotes.
 		- EXPRESSION - any legal C value (60, "hello", SI_RGB(255, 255, 255)).
 		- NAME - regular text with no enquotes (test, var, len).
 		- ANYTHING - anything.
@@ -729,7 +730,7 @@ SI_STATIC_ASSERT(sizeof(nil) == sizeof(void*));
 /* allocator - siAllocator* | type - TYPE | count - usize
  * Allocates an array of 'sizeof(type)' bytes to the allocator and casts the value. */
 #define si_mallocArray(allocator, type, count) (type*)si_malloc(allocator, sizeof(type) * (count))
-/* allocator - siAllocator* | pointer - REGULAR POINTER
+/* allocator - siAllocator* | pointer - POINTER
  * Allocates 'sizeof(variable)' bytes to the allocator and copies the value of
  * 'variable' to the allocated memory. Variable _must_ be a pointer. */
 #define si_mallocCopy(allocator, pointer) \
@@ -1822,7 +1823,8 @@ char* si_u64ToCstrEx(siAllocator* alloc, u64 num, i32 base, usize* outLen);
  * the number is base-10. */
 char* si_i64ToCstr(siAllocator* alloc, i64 num);
 /* Creates a string from the specified signed number and its base. Length of
- * the string is written into 'outLen', unless 'outLen' is nil. */
+ * the string, including the minus sign if the integer is negative, is written
+ * into 'outLen', unless 'outLen' is nil. */
 char* si_i64ToCstrEx(siAllocator* alloc, i64 num, i32 base, usize* outLen);
 
 /* Creates a string from the specified float. By default the function assumes that
@@ -2464,7 +2466,7 @@ typedef SI_ENUM(usize, siBitType) {
 
 /* x - INT
  * Returns true if x is negative. */
-#define si_numIsNeg(x) (x < 0)
+#define si_numIsNeg(x) ((x) < 0)
 
 /* Returns how many 1 bits are in an 8-bit number. */
 usize si_numCountBitsU8(u8 num);
@@ -2649,6 +2651,12 @@ siDllHandle si_dllLoad(cstring path);
 void si_dllUnload(siDllHandle dll);
 /* Returns the pointer to the specified processor name of the DLL. */
 siDllProc si_dllProcAddress(siDllHandle dll, cstring name);
+
+/* dll - siDllHandle | function - FUNCTION
+ * Loads the specified function's name as a processor and returns it as an ISO-C
+ * friendly function. */
+#define si_dllProcAddressFunc(dll, function) \
+	(((union { rawptr a; typeof(function) b;}){si_dllProcAddress(dll, #function)}).b)
 
 #endif /* !defined(SI_NO_DLL) */
 
@@ -4316,13 +4324,13 @@ char* si_i64ToCstr(siAllocator* alloc, i64 num) {
 char* si_i64ToCstrEx(siAllocator* alloc, i64 num, i32 base, usize* outLen) {
 	SI_ASSERT_NOT_NULL(alloc);
 
-	usize len = si_numLenI64Ex(num, base);
+	b64 isNegative = si_numIsNeg(num);
+	usize len = si_numLenI64Ex(num, base) + isNegative;
 	char* res = si_mallocArray(alloc, char, len + 1);
 
 	char* endPtr = res + len;
 	*endPtr = '\0';
 
-	b64 isNegative = si_numIsNeg(num);
 	u64 unsignedNum = (num ^ -isNegative) + isNegative;
 
 	do {
