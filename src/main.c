@@ -33,7 +33,7 @@ int main(void) {
 	siWindow* win = siapp_windowMake(
 		"Example window | ĄČĘĖĮŠŲ | 「ケケア」",
 		SI_AREA(0, 0),
-		SI_WINDOW_DEFAULT | SI_WINDOW_OPTIMAL_SIZE | SI_WINDOW_FULLSCREEN
+		SI_WINDOW_DEFAULT | SI_WINDOW_OPTIMAL_SIZE
 	);
 	siapp_windowRendererMake(win, SI_RENDERING_CPU, 1, SI_AREA(1024, 1024), 2);
 	siapp_windowBackgroundSet(win, SI_RGB(128, 0, 0));
@@ -116,8 +116,6 @@ int main(void) {
 #endif
 	//siFont f = siapp_fontLoad(win, "res/calibri.ttf", 64);
 
-	//siText woah = siapp_textLoad(textAlloc, &f, "Vardan tos, Lietuvos");
-
 	while (siapp_windowIsRunning(win) && !siapp_windowKeyClicked(win, SK_ESC)) {
 		const siWindowEvent* e =  siapp_windowUpdate(win, false);
 
@@ -145,18 +143,22 @@ int main(void) {
 				break;
 			}
 			case SK_H: {
-				static b32 showWindow = false;
-				siapp_windowShow(win, showWindow);
-				showWindow ^= true;
+				static siWindowShowState state = SI_SHOW_ACTIVATE;
+				siapp_windowShow(win, state);
+				state += 1;
+				SI_STOPIF(state > SI_SHOW_RESTORE, state = 0);
 				break;
 			}
 			case SK_F11: {
 				static b32 fullscreen = true;
 				siapp_windowFullscreen(win, fullscreen);
 				fullscreen ^= true;
+				si_printf("yes\n");
 				break;
 			}
 			case SK_T: {
+				SI_STOPIF(siapp_windowKeyPressed(win, SK_SHIFT_L), break);
+
 				siapp_windowCursorSet(win, newCursor);
 				si_swap(curCursor, newCursor);
 				break;
@@ -166,6 +168,39 @@ int main(void) {
 				si_swap(curRender, newRender);
 				continue;
 			}
+			case SK_M: {
+				siPoint pos = SI_POINT(
+					e->windowPos.x + e->windowSize.width / 2,
+					e->windowPos.y + e->windowSize.height / 2
+				);
+				siapp_mouseMove(pos);
+				break;
+			}
+			case SK_B: {
+				static b32 borderless = true;
+				siapp_windowBorderlessSet(win, borderless);
+				borderless ^= true;
+				break;
+			}
+		}
+		if (siapp_windowKeyMul(win, SK_SHIFT_L, SK_T)) {
+			usize len = 0;
+			char title[255];
+			siapp_messageBox(
+				"Enter the title", "Type out the new Window's title and once you're done, hit enter.",
+				SI_MESSAGE_BOX_OK, SI_MESSAGE_BOX_ICON_INFO
+			);
+
+			while (true) {
+				e = siapp_windowUpdate(win, true);
+				SI_STOPIF(e->curKey == SK_ENTER, break);
+
+				if (e->charBufferLen != 0 && len + e->charBufferLen < sizeof(title)) {
+					memcpy(&title[len], e->charBuffer, e->charBufferLen);
+					len += e->charBufferLen;
+				}
+			}
+			siapp_windowTitleSetEx(win, title, len);
 		}
 
 		for_range (i, 0, countof(drops)) {

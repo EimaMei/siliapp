@@ -1,4 +1,4 @@
-CC = gcc
+CC = clang
 OUTPUT = build
 NAME = test
 OS = LINUX
