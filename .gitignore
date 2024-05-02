@@ -1,6 +1,7 @@
 # Folders
 chars/
 src/deps
+.cache
 
 # Files
 *.exe
@@ -16,3 +17,4 @@ Dockerfile
 *.mp3
 *.png
 build/**
+test

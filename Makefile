@@ -1,7 +1,7 @@
-CC = clang
+CC = w64gcc
 OUTPUT = build
 NAME = test
-OS = LINUX
+OS = WINDOWS
 
 SRC-DIR = src
 SRC-FILES = $(notdir $(wildcard $(SRC-DIR)/*.c))

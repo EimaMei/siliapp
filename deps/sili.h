@@ -95,6 +95,8 @@ MACROS
 	Will cause 'undefined' compiler errors in some parts of the code without a
 	proper replacement.
 
+	- SI_NO_TYPEOF - disables the usage of '__typeof__' inside of the library.
+
 ===========================================================================
 CREDITS
 	- Ginger Bill's 'gb.h' (https://github.com//gingerBill/gb) - inspired me to
@@ -427,11 +429,18 @@ typedef double f64;
 SI_STATIC_ASSERT(sizeof(f32) == 4);
 SI_STATIC_ASSERT(sizeof(f64) == 8);
 
-#define SI_F32_MIN (1.17549435e-38f)
-#define SI_F32_MAX (3.40282347e+38f)
-
-#define SI_F64_MIN (2.2250738585072014e-308)
-#define SI_F64_MAX (1.7976931348623157e+308)
+#ifndef FLOAT32_MIN
+	#define FLOAT32_MIN (1.17549435e-38f)
+#endif
+#ifndef FLOAT32_MAX
+	#define FLOAT32_MAX (3.40282347e+38f)
+#endif
+#ifndef FLOAT64_MIN
+	#define FLOAT64_MIN (2.2250738585072014e-308)
+#endif
+#ifndef FLOAT64_MAX
+	#define FLOAT64_MAX (1.7976931348623157e+308)
+#endif
 
 
 #if !defined(b8)
@@ -684,10 +693,11 @@ SI_STATIC_ASSERT(sizeof(nil) == sizeof(void*));
 	| Unary operators      |
 	========================
 */
-#if !defined(typeof) && !(defined(SI_LANGUAGE_C) && SI_STANDARD_VERSION > SI_STANDARD_C17)
+#if !defined(typeof) && !(defined(SI_LANGUAGE_C) && SI_STANDARD_VERSION > SI_STANDARD_C17) && !defined(SI_NO_TYPEOF)
 	/* ...VALUE - TYPE/EXPRESSION
 	* Gets the value's type and expresses it as just a regular type. */
 	#define typeof(.../* VALUE */)  __typeof__(__VA_ARGS__)
+	#define SI_TYPEOF_USED 1
 #endif
 
 #if !defined(countof)
@@ -742,18 +752,36 @@ SI_STATIC_ASSERT(sizeof(nil) == sizeof(void*));
 /* type - TYPE | ...VALUES - <EXPRESSION>, [EXPRESSION] ...
  * Declares a static buffer. */
 #define si_buf(type, .../* VALUES */) (type[]){__VA_ARGS__}
-/* a - VARIABLE | b - VARIABLE
- * Swaps the value of 'a' with 'b'; 'b' with 'a'. */
-#define si_swap(a, b) do { typeof((a)) tmp = (a); (a) = (b); (b) = tmp; } while (0)
 /* Pauses the thread and waits for the user to press enter in the terminal. */
 #define si_pause() do { si_print("Press any key to continue..."); getchar(); } while(0)
 /* x - EXPRESSION
  * Checks if value is nil/zero. */
 #define si_isNil(x) ((x) == 0)
+
+#if defined(SI_TYPEOF_USED)
+/* a - VARIABLE | b - VARIABLE
+ * Swaps the value of 'a' with 'b'; 'b' with 'a'. */
+#define si_swap(a, b) do { typeof((a)) tmp = (a); (a) = (b); (b) = tmp; } while (0)
 /* countvar - NAME | start - INT | end - INT
  * A loop that loops from 'start' to 'end' and increments 'countVar' each cycle. */
 #define for_range(countVar, start, end) \
 	for (typeof(end) countVar = (start); countVar < (end); countVar += 1)
+#else
+/* a - VARIABLE | b - VARIABLE
+ * Swaps the value of 'a' with 'b'; 'b' with 'a'. */
+#define si_swap(a, b) do { \
+	char tmp[sizeof(a)]; \
+	memcpy(tmp, &a, sizeof(a)); \
+	memcpy(&a, &b, sizeof(a)); \
+	memcpy(&b, tmp, sizeof(b)); \
+} while (0)
+
+/* countvar - NAME | start - INT | end - INT
+ * A loop that loops from 'start' to 'end' and increments 'countVar' each cycle. */
+#define for_range(countVar, start, end) \
+	for (usize countVar = (start); countVar < (usize)(end); countVar += 1)
+
+#endif
 
 #if defined(SI_GNUC_COMPLIANT)
 	/* x - CONDITION
@@ -982,10 +1010,19 @@ typedef rawptr SI_FUNC_PTR(siFunction, (rawptr));
  * A hasty macro solution for inputting a function into a thread. */
 #define siFunc(func) SI_FUNC_PTR_CHANGE(func, siFunction)
 
-/* func1 - NAME | type - func2
+#if defined(SI_TYPEOF_USED)
+/* func1 - NAME | newType - TYPE
+ * Changes the type of the 1st specified function to newly specified one in an ISO C
+ * portable fashion. */
+#define SI_FUNC_PTR_CHANGE(func1, newType) \
+	SI_FUNC_PTR_CHANGE_EX(func1, typeof(func1), newType)
+#endif
+/* func1 - NAME | ogType - TYPE | newType - TYPE
  * Changes the type of the 1st specified function to second one's in an ISO C
  * portable fashion. */
-#define SI_FUNC_PTR_CHANGE(func1, func2) (((union { typeof(&func1) a; typeof(func2) b;}){func1}).b)
+#define SI_FUNC_PTR_CHANGE_EX(func1, ogType, newType) \
+	(((union { ogType a; newType b;}){func1}).b)
+
 
 /*
 	========================
@@ -1336,27 +1373,16 @@ typedef struct {
  * Gets the siArray's header. */
 #define SI_ARRAY_HEADER(array) ((siArrayHeader*)array - 1)
 
-#if !defined(for_each)
-	#if defined(SI_LANGUAGE_C) && SI_STANDARD_VERSION > SI_STANDARD_C89
-		/* variableName - NAME | array - siArray(TYPE)
-		 * Iterates through a siArray. */
-		#define for_each(variableName, array) \
-			for (\
-				typeof(array) variableName = array; \
-				variableName != (typeof(array))si_arrayGetPtr(array, si_arrayLen(array)); \
-				variableName += 1 \
-			)
-	#else
-		/* variableName - NAME | array - siArray(TYPE)
-		 * Iterates through a siArray. */
-		#define for_each(variableName, array) \
-			typeof(array) variableName; \
-			for ( \
-				variableName = array; \
-				variableName != (typeof(array))si_arrayGetPtr(array, si_arrayLen(array)); \
-				variableName += 1 \
-			)
-	#endif
+#if !defined(for_each) && SI_TYPEOF_USED
+	/* variableName - NAME | array - siArray(TYPE)
+	 * Iterates through a siArray. */
+	#define for_each(variableName, array) \
+		typeof(array) variableName; \
+		for ( \
+			variableName = array; \
+			variableName != (typeof(array))si_arrayGetPtr(array, si_arrayLen(array)); \
+			variableName += 1 \
+		)
 #endif
 
 /* array - siArray(TYPE) | index - usize
@@ -1704,6 +1730,9 @@ siUtf32Char si_utf8StrAt(siUtf8String str, usize charIndex);
 
 /* Encodes a NULL-terminated UTF-8 string into UTF-16. */
 siUtf16String si_utf8ToUtf16Str(siAllocator* alloc, siUtf8String str, usize* strLenOut);
+/* Encodes a length-specified UTF-8 string into UTF-16. */
+siUtf16String si_utf8ToUtf16StrEx(siAllocator* alloc, siUtf8String str, usize strLen,
+		usize* strLenOut);
 /* Encodes a NULL-terminated UTF-16 string into UTF-8. */
 siUtf8String si_utf16ToUtf8Str(siAllocator* alloc, siUtf16String str, usize* strLenOut);
 
@@ -2652,14 +2681,22 @@ void si_dllUnload(siDllHandle dll);
 /* Returns the pointer to the specified processor name of the DLL. */
 siDllProc si_dllProcAddress(siDllHandle dll, cstring name);
 
+#if defined(SI_TYPEOF_USED)
 /* dll - siDllHandle | function - FUNCTION
  * Loads the specified function's name as a processor and returns it as an ISO-C
  * friendly function. */
 #define si_dllProcAddressFunc(dll, function) \
-	(((union { rawptr a; typeof(function) b;}){si_dllProcAddress(dll, #function)}).b)
+	si_dllProcAddressFuncEx(dll, function, typeof(function))
+#endif
+
+/* dll - siDllHandle | function - FUNCTION |  type - TYPE
+ * Loads the specified function's name as a processor and returns it as an ISO-C
+ * friendly function. */
+#define si_dllProcAddressFuncEx(dll, function, type) \
+	(((union { rawptr a; type b; }){si_dllProcAddress(dll, #function)}).b)
+
 
 #endif /* !defined(SI_NO_DLL) */
-
 
 #if !defined(SI_NO_MATH)
 /*
@@ -2752,9 +2789,6 @@ f32 si_ceilF32(f32 x);
  * as a 64-bit unsigned int (meaning the exponent can only be from 0 to 19, otherwise
  * the app will crash). */
 u64 si_pow10(u32 exponent);
-/* Raises a f64 10 by the power of the exponent. The exponent must be in-between
- * -18 to 18, otherwise the app will crash.*/
-f64 si_pow10F64(i32 exponent);
 
 /* Rounds up the number to the nearest multiple and returns it. */
 u64 si_numRoundNearestMultiple(u64 num, usize multiple);
@@ -3423,13 +3457,17 @@ siString si_arrayToSistring(siArray(char*) array, cstring separator) {
 	}
 
 	siString res = si_stringMakeReserve(SI_ARRAY_HEADER(array)->allocator, totalSize);
-	rawptr backPtr = si_arrayBack(array);
-	for_each (str, array) {
-		if (separator != nil && (&str) != backPtr) {
-			si_stringJoin(&res, separator, *str);
+
+	if (separator != nil) {
+		for_range (i, 0, si_arrayLen(array) - 1) {
+			si_stringJoin(&res, separator, array[i]);
 		}
-		else {
-			si_stringAppend(&res, *str);
+		si_stringAppend(&res, array[si_arrayLen(array)]);
+
+	}
+	else {
+		for_range (i, 0, si_arrayLen(array)) {
+			si_stringAppend(&res, array[i]);
 		}
 	}
 
@@ -3613,7 +3651,7 @@ void si_arrayShrinkToFit(rawptr arrayPtr) {
 	siByte* array = *si_cast(siByte**, arrayPtr);
 	siArrayHeader* header = SI_ARRAY_HEADER(array);
 
-	header = (typeof(header))si_realloc(
+	header = (siArrayHeader*)si_realloc(
 		header->allocator,
 		header,
 		sizeof(siArrayHeader) + si_arrayTotalSize(array),
@@ -4349,33 +4387,86 @@ char* si_f64ToCstrEx(siAllocator* alloc, f64 num, i32 base, u32 afterPoint,
 		usize* outLen) {
 	SI_ASSERT_NOT_NULL(alloc);
 
-	b32 isNegative = num < 0;
-	num = si_absf(num);
-	usize len = isNegative + si_numLenEx((i64)num, base) + 1 * (afterPoint != 0) + afterPoint;
+
+	b32 isNegative;
+	{
+		static u64 infinity = 0x7FF0000000000000;
+		static u64 nanV = 0x7FF8000000000000;
+
+		union { f64 f; u64 n; } check = {num};
+		isNegative = (check.n & SI_ENDIAN_VALUE(SI_BIT(63), SI_BIT(0))) != 0;
+	   	check.n &= ~SI_ENDIAN_VALUE(SI_BIT(63), SI_BIT(0)); /* NOTE(EimaMei): A quick way of changing the minus to plus. */
+		num = check.f;
+
+		if (check.n == infinity) {
+			usize len = isNegative + 3;
+
+			char* res = si_mallocArray(alloc, char, len + 1);
+			char* endPtr = res;
+
+			SI_STOPIF(isNegative, endPtr[0] = '-'; endPtr += 1);
+			memcpy(endPtr, "inf\0", 4);
+			SI_STOPIF(outLen != nil, *outLen = len);
+
+			return res;
+		}
+		else if (check.n == nanV) {
+			char* res = si_mallocArray(alloc, char, 4);
+			char* endPtr = res;
+
+			memcpy(endPtr, "nan\0", 4);
+			SI_STOPIF(outLen != nil, *outLen = 3);
+
+			return res;
+
+		}
+	}
+
+
+	usize baseLen = 0;
+	f64 copy = num;
+	while (copy > 0.9999999999) { /* NOTE(EimaMei): How long can this be?? */
+		copy /= base;
+		baseLen += 1;
+	}
+	usize len = isNegative + baseLen + (afterPoint != 0) + afterPoint;
+
+	if (baseLen != 0) {
+		copy *= base;
+		baseLen -= 1;
+	}
+	else {
+		len += 1;
+	}
+	f64 remainder = copy;
+
 
 	char* res = si_mallocArray(alloc, char, len + 1);
-	char* endPtr = res + len;
-	*endPtr = '\0';
+	char* endPtr = res;
 
-	f64 baseForm = num;
-	u64 pow10val = si_pow10(afterPoint);
-	u64 remainder = (u64)((baseForm - (u64)baseForm) * pow10val + 0.5);
-
-	usize count = 0;
-	while (count < afterPoint) {
-		*(--endPtr) = SI_NUM_TO_CHAR_TABLE[remainder % base];
-		remainder /= base;
-		count += 1;
-	}
-	SI_STOPIF(count != 0, *(--endPtr) = '.');
+	SI_STOPIF(isNegative, *endPtr = '-'; endPtr++);
+	endPtr[len] = '\0';
 
 	do {
-		*(--endPtr) = SI_NUM_TO_CHAR_TABLE[(u64)baseForm % base];
-		baseForm /= base;
-	} while ((u64)baseForm > 0);
+		u32 digit = (u32)copy;
+		copy -= digit;
+		copy *= base;
 
+		*endPtr = SI_NUM_TO_CHAR_TABLE[digit % base];
+		endPtr += 1;
+	} while (baseLen--);
 
-	SI_STOPIF(isNegative, *(--endPtr) = '-');
+	SI_STOPIF(afterPoint != 0, *endPtr = '.'; endPtr += 1);
+
+	while (afterPoint) {
+		remainder *= base;
+
+		*endPtr = SI_NUM_TO_CHAR_TABLE[(u64)remainder % base];
+		endPtr += 1;
+
+		afterPoint -= 1;
+	}
+
 	SI_STOPIF(outLen != nil, *outLen = len);
 	return res;
 }
@@ -4581,6 +4672,53 @@ end:
 	SI_STOPIF(strLenOut != nil, *strLenOut = len);
 	return res;
 }
+siUtf16String si_utf8ToUtf16StrEx(siAllocator* alloc, siUtf8String str, usize strLen,
+		usize* strLenOut) {
+	SI_ASSERT_NOT_NULL(alloc);
+	SI_ASSERT_NOT_NULL(str);
+
+	siUtf8String utf8Ptr = str;
+	siUtf16String res = (siUtf16String)si_allocatorCurPtr(alloc);
+	u16* curPos = (u16*)res;
+
+	while (strLen) {
+		siUtf32Char utf32 = si_utf8Decode(utf8Ptr);
+		i32 codepoint = utf32.codepoint;
+		SI_ASSERT_MSG(codepoint != SI_UNICODE_INVALID, "Invalid UTF-8 character.");
+
+		SI_STOPIF(codepoint == '\0', break);
+		utf8Ptr += utf32.len;
+
+		if (codepoint < 0xFFFF) {
+			alloc->offset += 2;
+			SI_STOPIF(alloc->offset >= alloc->maxLen, goto end);
+
+			*curPos = codepoint;
+			curPos += 1;
+		}
+		else {
+			alloc->offset += 4;
+			SI_STOPIF(alloc->offset >= alloc->maxLen, goto end);
+
+			u32 t = codepoint - 0x10000;
+			u32 high = (t << 10) + 0xD800;
+			u32 low = t + 0xDC00;
+
+			*curPos = (high << 16) | (low & 0x0000FFFF);
+			curPos += 2;
+		}
+
+		strLen -= 1;
+	}
+end:
+	*curPos = '\0';
+	usize len = (char*)curPos - (char*)res;
+	alloc->offset += len + 1;
+
+	SI_STOPIF(strLenOut != nil, *strLenOut = len);
+	return res;
+}
+
 
 siUtf8String si_utf16ToUtf8Str(siAllocator* alloc, siUtf16String str, usize* strLenOut) {
 	SI_ASSERT_NOT_NULL(alloc);
@@ -6048,8 +6186,8 @@ u64 si_bytesToNumSiArr(siArray(u8) bytes) {
 	u64 res = 0;
 	usize shift = (si_arrayLen(bytes) - 1) * 8;
 
-	for_each (byte, bytes) {
-		res |= si_cast(u64, *byte) << shift;
+	for_range (i, 0, si_arrayLen(bytes)) {
+		res |= (u64)bytes[i] << shift;
 		shift -= 8;
 	}
 
@@ -6181,7 +6319,7 @@ isize si_snprintfVa(char* buffer, usize outCap, cstring fmt, va_list va) {
 	union { u64 U64; i64 I64; f64 F64; i32 I32; u32 U32; cstring STR; siByte* PTR; usize USIZE; } vaValue;
 	usize bufIndex = 0;
 	usize len;
-	siAllocator* stack = si_allocatorMakeStack(64);
+	siAllocator* stack = si_allocatorMakeStack(128);
 
 	char x;
 	cstring fmtPtr = fmt;
@@ -6473,7 +6611,7 @@ SI_GOTO_LABEL(GOTO_PRINT_SWITCH)
 				else {
 					f64 remainder = vaValue.F64 - (u64)vaValue.F64;
 					u64 newAfterPoint = 0;
-					f64 maxZeroValue = si_pow10F64(-(i32)afterPoint);
+					f64 maxZeroValue = (f64)si_pow10(-(i32)afterPoint);
 					while (newAfterPoint < afterPoint) {
 						remainder *= 10;
 						i64 digit = (i64)(remainder + (0.5 * ((i64)remainder != 0)));
@@ -6699,7 +6837,7 @@ siDllProc si_dllProcAddress(siDllHandle dll, cstring name) {
 	SI_ASSERT_NOT_NULL(name);
 #if defined(SI_SYSTEM_WINDOWS)
 	PROC proc = GetProcAddress((HMODULE)dll, name);
-	return SI_FUNC_PTR_CHANGE(*proc, rawptr);
+	return SI_FUNC_PTR_CHANGE_EX(*proc, PROC, rawptr);
 #else
 	return (siDllProc)dlsym(dll, name);
 #endif
@@ -6797,24 +6935,6 @@ u64 si_pow10(u32 exponent) {
 	SI_ASSERT_MSG(exponent < countof(allPossibleValues), "Exponent must be in range from 0 to 18 to not overflow.");
 
 	return allPossibleValues[exponent];
-}
-
-F_TRAITS(inline)
-f64 si_pow10F64(i32 exponent) {
-	static const f64 allPossibleValues[] = {
-		1e-18, 1e-17, 1e-16, 1e-15, 1e-14, 1e-13,
-		1e-12, 1e-11, 1e-10, 1e-09, 1e-08, 1e-07,
-		1e-06, 1e-05, 1e-04, 1e-03, 1e-02, 1e-01,
-
-		1e+0,
-
-		1e+01, 1e+02, 1e+03, 1e+04, 1e+05, 1e+06,
-		1e+07, 1e+08, 1e+09, 1e+10, 1e+11, 1e+12,
-		1e+13, 1e+14, 1e+15, 1e+16, 1e+17, 1e+18
-	};
-	SI_ASSERT_MSG(si_between(exponent, -18, 18), "Exponent large. Must be from 0 to 19 to not overflow.");
-
-	return allPossibleValues[exponent + 18];
 }
 
 F_TRAITS(inline)

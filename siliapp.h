@@ -138,7 +138,7 @@ typedef SI_ENUM(b32, siWindowArg) {
 	SI_WINDOW_FULLSCREEN              = SI_BIT(2),
 
 	SI_WINDOW_BORDERLESS              = SI_BIT(3),
-	SI_WINDOW_RESIZABLE               = SI_BIT(4),
+	SI_WINDOW_NO_RESIZE               = SI_BIT(4),
 
 	SI_WINDOW_MINIMIZED               = SI_BIT(5),
 	SI_WINDOW_MAXIMIZED               = SI_BIT(6),
@@ -151,7 +151,7 @@ typedef SI_ENUM(b32, siWindowArg) {
 	SI_WINDOW_WIN32_DISABLE_DARK_MODE = SI_BIT(30),
 #endif
 
-	SI_WINDOW_DEFAULT                 = SI_WINDOW_CENTER | SI_WINDOW_RESIZABLE | SI_WINDOW_KEEP_ASPECT_RATIO,
+	SI_WINDOW_DEFAULT                 = SI_WINDOW_CENTER | SI_WINDOW_KEEP_ASPECT_RATIO,
 };
 
 typedef SI_ENUM(u32, siRenderingType) {
@@ -331,6 +331,7 @@ typedef struct {
 	siKeyState mouseButtons[SI_MOUSE_COUNT];
 
 	siMouseWheelType mouseWheel;
+	i32 mouseScroll;
 
 	siPoint windowPos;
 	siArea windowSize;
@@ -531,7 +532,12 @@ typedef struct {
 	u32 len;
 
 	u32 __index;
+#if defined(SIAPP_PLATFORM_API_WIN32)
+	IFileOpenDialog* __pfd;
+	IShellItemArray* __items;
+#else
 	rawptr __data;
+#endif
 } siSearchHandle;
 
 typedef struct {
@@ -778,7 +784,7 @@ void siapp_windowFullscreen(siWindow* win, b32 fullscreen);
 b32 siapp_windowVSyncSet(siWindow* win, b32 value);
 /* Sets the window title bar to dark mode depending on the boolean. On other
  * platforms this does nothing. */
-void siapp_windowWin32DarkModeSet(const siWindow* win, b32 darkMode);
+void siapp_windowWin32DarkModeSet(const siWindow* win, b32 lightMode);
 /* Removes the borders of the window depending on the boolean. */
 void siapp_windowBorderlessSet(const siWindow* win, b32 borderless);
 
@@ -881,7 +887,7 @@ void siapp_dropEventEnd(siDropEvent* event);
 
 /* Converts an OS keycode to 'siKeyType'.  */
 siKeyType siapp_osKeyToSili(i32 key);
-/* Converts an OS enum error intto a human-readable string (max length size is 128 bytes). */
+/* Converts an OS enum error into a human-readable string (max length size is 128 bytes). */
 cstring siapp_osErrToStr(i32 error);
 
 
@@ -1095,7 +1101,7 @@ siMessageBoxResult siapp_messageBox(cstring title, cstring message,
 /* Opens an OS message box with the specified tittle, message, buttons and icons.
  * If 'win' is not NULL, the message box window becomes a child window of it.
  * Returns the exact button that was selected. */
-siMessageBoxResult siapp_messageBoxEx(const siWindow* win, cstring title,
+siMessageBoxResult siapp_messageBoxEx(siWindow* win, cstring title,
 		cstring message, siMessageBoxButton buttons, siMessageBoxIcon icon);
 
 
@@ -1498,6 +1504,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			e->type.mouseScroll = true;
 			i32 delta = GET_WHEEL_DELTA_WPARAM(wParam);
 			e->mouseWheel = (delta < 0) ? SI_MOUSE_WHEEL_DOWN : SI_MOUSE_WHEEL_UP;
+			e->mouseScroll = delta;
 			break;
 		}
 		case WM_LBUTTONDOWN: {
@@ -1581,7 +1588,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 			e->type.keyPress = win->e.type.keyPress || isDown;
 			e->type.keyRelease = isUp;
-
 
 			// NOTE(bill): Escaped sequences, turn vk into the correct scan code
 			// except for VK_PAUSE (it's a bug)
@@ -1892,7 +1898,7 @@ typedef SI_ENUM(i32, siShaderIndex) {
 #define GL_BUFFER_MAKE(ID, var, size) \
 	do { \
 		if ((win->renderType & SI_RENDERING_OPENGL_BITS) == SI_RENDERINGVER_OPENGL_3_3) { \
-			var = (typeof(var))malloc(size); \
+			var = malloc(size); \
 			glBindBuffer(GL_ARRAY_BUFFER, gl->VBOs[ID]); \
 			glBufferData(GL_ARRAY_BUFFER, size, var, GL_DYNAMIC_DRAW); \
 		} \
@@ -2102,7 +2108,7 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 		SIAPP_ERROR_CHECK(res == false, "RegisterRawInputDevices");
 
 		SI_WIN32_DWMAPI = si_dllLoad("dwmapi.dll");
-		DwmSetWindowAttribute = si_dllProcAddressFunc(SI_WIN32_DWMAPI, DwmSetWindowAttribute);
+		DwmSetWindowAttribute = si_dllProcAddressFuncEx(SI_WIN32_DWMAPI, DwmSetWindowAttribute, DwmSetWindowAttributeSIPROC);
 
 	}
 	SI_WINDOWS_NUM += 1;
@@ -2117,10 +2123,10 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 	i32 err = RegisterClassW(&class);
 	SIAPP_ERROR_CHECK(err == 0, "RegisterClassW");
 
-	DWORD windowStyle =
-		WS_CAPTION | WS_SYSMENU | WS_BORDER |
-		WS_SIZEBOX | WS_MAXIMIZEBOX | WS_MINIMIZEBOX;
-
+	DWORD windowStyle = WS_CAPTION | WS_SYSMENU | WS_BORDER;
+	if ((win->arg & SI_WINDOW_NO_RESIZE) == 0) {
+		windowStyle |= WS_SIZEBOX | WS_MAXIMIZEBOX | WS_MINIMIZEBOX;
+	}
 
 	RECT adjustRect = {pos.x, pos.y, size.width, size.height};
 	AdjustWindowRect(&adjustRect, windowStyle, 0);
@@ -2140,7 +2146,11 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 	win->hwnd = hwnd;
 	win->hdc = GetDC(hwnd);
 
-	siapp_windowWin32DarkModeSet(win, (win->arg & SI_WINDOW_WIN32_DISABLE_DARK_MODE) == 0);
+	b32 darkMode = false;
+	if ((win->arg & SI_WINDOW_WIN32_DISABLE_DARK_MODE) == 0 ) {
+		darkMode = siapp_darkModeEnabled();
+	}
+	siapp_windowWin32DarkModeSet(win, darkMode);
 #elif defined(SIAPP_PLATFORM_API_X11)
 	siapp__x11CheckStartup();
 	win->display = XOpenDisplay(nil);
@@ -2295,6 +2305,10 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 		siPoint point = out->mouseRoot;
 		siRect rect = SI_RECT_PA(out->windowPos, out->windowSize);
 		out->mouseInside = siapp__collideRectPoint(rect, point);
+	}
+
+	if (await) {
+		WaitMessage();
 	}
 
 	MSG msg = {0};
@@ -2758,8 +2772,8 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 	}
 #endif
 
+	f64 curTime = (f64)si_RDTSC() / si_cpuClockSpeed();
 	f64 prevTime = out->curTime;
-	f64 curTime = si_clock();
 	out->curTime = curTime;
 	out->timeDelta = curTime - prevTime;
 
@@ -2871,27 +2885,46 @@ b32 siapp_windowIsRunning(const siWindow* win) {
 
 void siapp_windowMove(siWindow* win, siPoint pos) {
 	SI_ASSERT_NOT_NULL(win);
-
 	win->e.windowPos = pos;
 	win->e.type.windowMove = true;
+
+#if defined(SIAPP_PLATFORM_API_WIN32)
+	SetWindowPos(win->hwnd, HWND_TOP, pos.x, pos.y, 0, 0, SWP_NOSIZE);
+#elif defined(SIAPP_PLATFORM_API_X11)
 	XMoveWindow(win->display, win->hwnd, pos.x, pos.y);
 	XFlush(win->display);
+#endif
 
 }
 void siapp_windowResize(siWindow* win, siArea size) {
 	SI_ASSERT_NOT_NULL(win);
 
+#if defined(SIAPP_PLATFORM_API_WIN32)
+	SetWindowPos(win->hwnd, HWND_TOP, 0, 0, size.width, size.height, SWP_NOMOVE);
+#elif defined(SIAPP_PLATFORM_API_X11)
 	XResizeWindow(win->display, win->hwnd, size.width, size.height);
 	XFlush(win->display);
-	siapp__resizeWindow(win, size.width, size.height, true);
+#endif
+
+	siapp__resizeWindow(win, size.width, size.height, true); // TODO(EimaMei): Is this needed?
 }
 
 
 void siapp_windowShow(siWindow* win, siWindowShowState state) {
 	SI_ASSERT_NOT_NULL(win);
+	SI_ASSERT(si_between(state, SI_SHOW_HIDE, SI_SHOW_RESTORE));
+
 #if defined(SIAPP_PLATFORM_API_WIN32)
-	#error " "
-	ShowWindow(win->hwnd, show);
+	DWORD value;
+	switch (state) {
+		case SI_SHOW_HIDE: value = SW_HIDE; break;
+		case SI_SHOW_ACTIVATE: value = SW_SHOW; break;
+		case SI_SHOW_MINIMIZE: value = SW_MINIMIZE; break;
+		case SI_SHOW_MAXIMIZE: value = SW_MAXIMIZE; break;
+		case SI_SHOW_RESTORE: value = SW_RESTORE; break;
+	}
+
+	ShowWindow(win->hwnd, value);
 #elif defined(SIAPP_PLATFORM_API_X11)
 	switch (state) {
 		case SI_SHOW_HIDE: {
@@ -3016,19 +3049,39 @@ b32 siapp_windowVSyncSet(siWindow* win, b32 value) {
 
 	return true;
 }
-void siapp_windowWin32DarkModeSet(const siWindow* win, b32 darkMode) {
+void siapp_windowWin32DarkModeSet(const siWindow* win, b32 lightMode) {
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	SI_STOPIF(DwmSetWindowAttribute == nil, return);
 	SI_ASSERT_NOT_NULL(win);
 
-	BOOL value = darkMode & 1;
+	BOOL value = lightMode & 1;
 	DwmSetWindowAttribute(win->hwnd, /* DWMWA_USE_IMMERSIVE_DARK_MODE */ 20, &value, sizeof(value));
 #else
-	SI_UNUSED(win); SI_UNUSED(darkMode);
+	SI_UNUSED(win); SI_UNUSED(lightMode);
 #endif
 }
 void siapp_windowBorderlessSet(const siWindow* win, b32 borderless) {
-#if defined(SIAPP_PLATFORM_API_X11)
+	SI_ASSERT_NOT_NULL(win);
+
+#if defined(SIAPP_PLATFORM_API_WIN32)
+	DWORD style = GetWindowLong(win->hwnd, GWL_STYLE);
+
+	if (borderless) {
+		SetWindowLong(win->hwnd, GWL_STYLE, style & ~WS_OVERLAPPEDWINDOW);
+		SetWindowPos(
+			win->hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+			SWP_NOZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW | SWP_NOMOVE | SWP_NOSIZE
+		);
+	}
+	else {
+		SetWindowLong(win->hwnd, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
+		SetWindowPos(
+			win->hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+			SWP_NOZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW | SWP_NOMOVE | SWP_NOSIZE
+		);
+	}
+
+#elif defined(SIAPP_PLATFORM_API_X11)
 	struct __x11WindowHints {
 		unsigned long flags, functions, decorations, status;
 		long input_mode;
@@ -3477,7 +3530,14 @@ b32 siapp_darkModeEnabled(void) {
 #if defined(SIAPP_PLATFORM_API_X11)
 	return false;
 #else
-	#error ""
+	b32 lightMode = true;
+	DWORD len = sizeof(lightMode);
+	RegGetValueW(
+		HKEY_CURRENT_USER,
+		L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+		L"AppsUseLightTheme", RRF_RT_REG_DWORD, nil, &lightMode, &len
+	);
+	return (lightMode == false);
 #endif
 }
 
@@ -3513,7 +3573,7 @@ void siapp_mouseShow(b32 show) {
 }
 void siapp_mouseMove(siPoint pos) {
 #if defined(SIAPP_PLATFORM_API_WIN32)
-	#error "d "
+	SetCursorPos(pos.x, pos.y);
 #elif defined(SIAPP_PLATFORM_API_X11)
 	XWarpPointer(SI_X11_DISPLAY, None, DefaultRootWindow(SI_X11_DISPLAY), 0, 0, 0, 0, pos.x, pos.y);
 	XFlush(SI_X11_DISPLAY);
@@ -3773,17 +3833,17 @@ siDropHandle siapp_dropEventHandle(siDropEvent event) {
 
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	FORMATETC fmte = {CF_HDROP, nil, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
-	STGMEDIUM stgm;
+	STGMEDIUM data;
 	IDataObject* pDataObj = event.data;
 
 
-	b32 err = pDataObj->lpVtbl->GetData(pDataObj, &fmte, &stgm) == S_OK;
+	b32 err = pDataObj->lpVtbl->GetData(pDataObj, &fmte, &data) == S_OK;
 	SI_STOPIF(!err, goto end);
 
-	HDROP hdrop = (HDROP)stgm.hGlobal;
+	HDROP hdrop = (HDROP)data.hGlobal;
 
 	res.len = DragQueryFileW(hdrop, 0xFFFFFFFF, NULL, 0);
-	res.stgm = stgm;
+	res.data = data;
 end:
 #elif defined(SIAPP_PLATFORM_API_X11)
 	SI_ASSERT_NOT_NULL(event.data);
@@ -3826,7 +3886,7 @@ end:
 b32 siapp_dropEventPollEntry(siDropHandle* handle, siDropEntry* entry) {
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	if (handle->__index >= handle->len) {
-		ReleaseStgMedium(&handle->stgm);
+		ReleaseStgMedium(&handle->data);
 		return false;
 	}
 
@@ -3834,7 +3894,7 @@ b32 siapp_dropEventPollEntry(siDropHandle* handle, siDropEntry* entry) {
 	siAllocator* stack = si_allocatorMakeStack(SI_KILO(8));
 	u16* curPtr = (u16*)si_allocatorCurPtr(stack);
 
-	DragQueryFileW(handle->stgm.hGlobal, handle->__index, curPtr, SI_KILO(4));
+	DragQueryFileW(handle->data.hGlobal, handle->__index, curPtr, SI_KILO(4));
 	si_utf16ToUtf8Str(&out, curPtr, &entry->len);
 	handle->__index += 1;
 #elif defined(SIAPP_PLATFORM_API_X11)
@@ -4254,99 +4314,126 @@ siSiliStr siapp_usernameGet(void) {
 
 siSearchHandle siapp_fileManagerOpen(siSearchConfig config) {
 #if defined(SIAPP_PLATFORM_API_WIN32)
-	#error ""
 	siAllocator* stack = si_allocatorMake(SI_KILO(4));
 	IFileOpenDialog* pfd;
-	IShellItemArray* items;
-
+	IShellItemArray* items = nil;
 
 	CoCreateInstance(&CLSID_FileOpenDialog, NULL, CLSCTX_ALL, &IID_IFileOpenDialog, (rawptr*)&pfd);
 
-	{
-		if (config.title != nil) {
-			siUtf16String utf16 = si_utf8ToUtf16Str(stack, config.title, nil);
-			pfd->lpVtbl->SetTitle(pfd, utf16);
-			si_allocatorReset(stack);
+	if (config.title != nil) {
+		siUtf16String utf16 = si_utf8ToUtf16Str(stack, config.title, nil);
+		pfd->lpVtbl->SetTitle(pfd, utf16);
+		si_allocatorReset(stack);
+	}
+	FILEOPENDIALOGOPTIONS fos = FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST;
+	switch (config.options) {
+		case SI_SEARCH_ALLOW_MULTIPLE: {
+			fos |= FOS_ALLOWMULTISELECT;
+			break;
+		}
+		case SI_SEARCH_FOLDERS_ONLY: {
+			fos |= FOS_PICKFOLDERS;
+			break;
+		}
+		case SI_SEARCH_FOLDERS_ONLY | SI_SEARCH_ALLOW_MULTIPLE: {
+			fos |= FOS_PICKFOLDERS | FOS_ALLOWMULTISELECT;
+			break;
 		}
 	}
-	{
-		FILEOPENDIALOGOPTIONS fos = FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST;
-		switch (config.options) {
-			case SI_SEARCH_ALLOW_MULTIPLE: {
-				fos |= FOS_ALLOWMULTISELECT;
-				break;
-			}
-			case SI_SEARCH_FOLDERS_ONLY: {
-				fos |= FOS_PICKFOLDERS;
-				break;
-			}
-			case SI_SEARCH_FOLDERS_ONLY | SI_SEARCH_ALLOW_MULTIPLE: {
-				fos |= FOS_PICKFOLDERS | FOS_ALLOWMULTISELECT;
-				break;
+	pfd->lpVtbl->SetOptions(pfd, fos);
+	if (config.defaultPath != nil) {
+		siUtf16String utf16 = si_utf8ToUtf16Str(stack, config.defaultPath, nil);
+		IShellItem* folder;
+		HRESULT res = SHCreateItemFromParsingName(
+			utf16, nil, &IID_IShellItem, (rawptr*)&folder
+		);
+
+		if (res == SI_OKAY) {
+			pfd->lpVtbl->SetFolder(pfd, folder);
+			folder->lpVtbl->Release(folder);
+		}
+		si_allocatorReset(stack);
+	}
+
+	if (config.filetypes != nil) {
+
+		COMDLG_FILTERSPEC* tmp = si_mallocArray(stack, COMDLG_FILTERSPEC, config.filetypesLen);
+
+		for_range (i, 0, config.filetypesLen) {
+			siSearchFilterSpec* spec = &config.filetypes[i];
+			cstring filetype = spec->filetype;
+			tmp[i].pszName = si_utf8ToUtf16Str(stack, spec->name, nil);
+
+			usize amount = 1;
+			usize totalLen = 0;
+			usize filetypeLen = 0;
+
+			u16* arr[16];
+			usize arrLen[16];
+			while (true) {
+				char x = filetype[filetypeLen];
+
+				if (x == ';') {
+					usize len;
+					u16* txt = si_utf8ToUtf16StrEx(stack, filetype, filetypeLen, &len);
+					arr[amount - 1] = txt;
+					arrLen[amount - 1] = len;
+
+					filetype += filetypeLen + 1;
+					amount += 1;
+					totalLen += len;
+					filetypeLen = 0;
+					continue;
+				}
+				else if (x == '\0') {
+					usize fLen;
+					u16* txt = si_utf8ToUtf16StrEx(stack, filetype, filetypeLen, &fLen);
+					totalLen += fLen;
+
+					usize len = 2 * amount + (amount - 1) + totalLen;
+					siByte* out = si_mallocArray(stack, siByte, (len + 1) * 2);
+					usize outI = 0;
+
+					for_range (i, 0, amount - 1) {
+						siByte* filetype = (siByte*)arr[i];
+						usize fLen = arrLen[i];
+						memcpy(&out[outI], L"*.", 4);
+						outI += 4;
+						memcpy(&out[outI], filetype, fLen);
+						outI += fLen;
+						memcpy(&out[outI], L";", 2);
+						outI += 2;
+					}
+					memcpy(&out[outI], L"*.", 4);
+					memcpy(&out[outI + 4], txt, fLen);
+
+					out[len] = 0;
+					tmp[i].pszSpec = (u16*)out;
+					break;
+				}
+				filetypeLen += 1;
 			}
 		}
-		pfd->lpVtbl->SetOptions(pfd, fos);
+
+		pfd->lpVtbl->SetFileTypes(pfd, config.filetypesLen, tmp);
+		si_allocatorReset(stack);
 	}
-	{
-		if (config.defaultPath != nil) {
-			siUtf16String utf16 = si_utf8ToUtf16Str(stack, config.defaultPath, nil);
-			IShellItem* folder;
-			HRESULT res = SHCreateItemFromParsingName(
-				utf16, nil, &IID_IShellItem, (rawptr*)&folder
-			);
-
-			if (res == SI_OKAY) {
-				pfd->lpVtbl->SetFolder(pfd, folder);
-				folder->lpVtbl->Release(folder);
-			}
-			si_allocatorReset(stack);
-		}
-	}
-	{
-		if (config.filetypes != nil) {
-			COMDLG_FILTERSPEC* tmp = si_mallocArray(stack, COMDLG_FILTERSPEC, config.filetypesLen);
-
-			for_range (i, 0, config.filetypesLen) {
-				siSearchFilterSpec spec = config.filetypes[i];
-
-				tmp[i].pszName = si_utf8ToUtf16Str(stack, spec.name, nil);
-				tmp[i].pszSpec = si_utf8ToUtf16Str(stack, spec.filetype, nil);
-			}
-
-			pfd->lpVtbl->SetFileTypes(pfd, config.filetypesLen, tmp);
-			si_allocatorReset(stack);
-		}
-	}
+	siSearchHandle handle;
+	handle.__pfd = pfd;
+	handle.__index = 0;
 
 	pfd->lpVtbl->Show(pfd, nil);
 	{
 		HRESULT err = pfd->lpVtbl->GetResults(pfd, &items);
-		SI_STOPIF(err != 0, return (siSearchResult){nil, 0});
+		handle.__items = items;
+		SI_STOPIF(err != 0, return handle);
 	}
 
 	DWORD len;
 	items->lpVtbl->GetCount(items, &len);
+	handle.len = len;
 
-	siSearchResult res;
-	res.len = len;
-	res.items = si_mallocArray(alloc, siSiliStr, len);
-
-	stack->offset = 0;
-	for_range (i, 0, len) {
-		IShellItem* item;
-		LPWSTR widePath = nil;
-
-		items->lpVtbl->GetItemAt(items, i, &item);
-		item->lpVtbl->GetDisplayName(item, SIGDN_FILESYSPATH, &widePath);
-
-		usize* strLen = si_mallocItem(alloc, usize);
-		res.items[i] = (siSiliStr)si_utf16ToUtf8Str(alloc, widePath, strLen);
-	}
-
-	items->lpVtbl->Release(items);
-	pfd->lpVtbl->Release(pfd);
-
-	return res;
+	return handle;
 #elif defined(SIAPP_PLATFORM_API_COCOA)
 	NSOpenPanel* panel = NSOpenPanel_openPanel();
 
@@ -4444,6 +4531,7 @@ siSearchHandle siapp_fileManagerOpen(siSearchConfig config) {
 b32 siapp_searchPollEntry(siSearchHandle* handle, siSearchEntry* entry) {
 #if defined(SIAPP_PLATFORM_API_COCOA)
 	if (handle->__index >= handle->len) {
+		NSRelease(panel):
 		return false;
 	}
 
@@ -4454,6 +4542,28 @@ b32 siapp_searchPollEntry(siSearchHandle* handle, siSearchEntry* entry) {
 	memcpy(entry->path, str, len);
 	entry->path[len] = '\0';
 	entry->len = len;
+
+	handle->__index += 1;
+	return true;
+#elif defined(SIAPP_PLATFORM_API_WIN32)
+	IFileOpenDialog* pfd = handle->__pfd;
+	IShellItemArray* items = handle->__items;
+
+	if (handle->__index >= handle->len) {
+		SI_STOPIF(items != nil, items->lpVtbl->Release(items));
+		pfd->lpVtbl->Release(pfd);
+
+		return false;
+	}
+
+	IShellItem* item;
+	LPWSTR widePath = nil;
+
+	items->lpVtbl->GetItemAt(items, handle->__index, &item);
+	item->lpVtbl->GetDisplayName(item, SIGDN_FILESYSPATH, &widePath);
+
+	siAllocator tmp = si_allocatorMakeTmp(entry->path, sizeof(entry->path));
+	si_utf16ToUtf8Str(&tmp, widePath, &entry->len);
 
 	handle->__index += 1;
 	return true;
@@ -5353,8 +5463,13 @@ void siapp_windowTitleSet(const siWindow* win, cstring title) {
 }
 void siapp_windowTitleSetEx(const siWindow* win, cstring title, usize len) {
 	SI_ASSERT_NOT_NULL(win);
+	SI_ASSERT_MSG(len <= 255, "The length cannot be larger than 255 characters.");
+#if defined(SIAPP_PLATFORM_API_WIN32)
+	siAllocator* stack = si_allocatorMake(SI_KILO(1));
+	siUtf16String wideStr = si_utf8ToUtf16Str(stack, title, nil);
 
-#if defined(SIAPP_PLATFORM_API_X11)
+	SetWindowTextW(win->hwnd, wideStr);
+#elif defined(SIAPP_PLATFORM_API_X11)
 	XStoreName(win->display, win->hwnd, title);
 	XChangeProperty(
 		win->display, win->hwnd, _NET_WM_NAME, UTF8_STRING,
@@ -6743,7 +6858,7 @@ siMessageBoxResult siapp_messageBox(cstring title, cstring message,
 	return siapp_messageBoxEx(nil, title, message, buttons, icon);
 }
 
-siMessageBoxResult siapp_messageBoxEx(const siWindow* win, cstring title,
+siMessageBoxResult siapp_messageBoxEx(siWindow* win, cstring title,
 		cstring message, siMessageBoxButton buttons, siMessageBoxIcon icon) {
 	SI_ASSERT_NOT_NULL(title);
 	SI_ASSERT_NOT_NULL(message);
@@ -6777,6 +6892,11 @@ siMessageBoxResult siapp_messageBoxEx(const siWindow* win, cstring title,
 	switch (res) {
 		case IDTRYAGAIN: res = SI_MESSAGE_BOX_RESULT_TRY_AGAIN; break;
 		case IDCONTINUE: res = SI_MESSAGE_BOX_RESULT_CONTINUE; break;
+	}
+	if (win != nil && win->e.type.keyPress) {
+		memset(win->e.keys, 0, sizeof(win->e.keys));
+		win->e.curKey = 0;
+		win->e.type.keyPress = false;
 	}
 
 	si_allocatorFree(tmp);

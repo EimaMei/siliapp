@@ -1,3 +1,4 @@
+#include <math.h>
 #include <siliapp.h>
 #define DISABLE_SECOND_WINDOW  1 /* NOTE(EimaMei): For whatever reason, creating a
 								   window on a subthread is not allowed  on MacOS,
@@ -95,14 +96,14 @@ int main(void) {
 
 #if 0
 	siSearchConfig config = SI_SEARCH_DEFAULT;
-	config.filetypes = (siSearchFilterSpec[]){{"Test", "out;mm"}};
-	config.filetypesLen = 1;
+	config.filetypes = (siSearchFilterSpec[]){{"Test", "out;mm"}, {"C/C++ stuff", "cpp;c"}};
+	config.filetypesLen = 2;
 	config.options = SI_SEARCH_ALLOW_MULTIPLE;
 
 	siSearchHandle handle = siapp_fileManagerOpen(config);
 	siSearchEntry search;
 	usize x = 0;
-	si_printf("damn\n");
+	si_printf("damn %i\n", handle.len);
 	while (siapp_searchPollEntry(&handle, &search)) {
 		si_printf("%i: %s %i\n",  x, search.path, search.len);
         x += 1;
@@ -116,8 +117,20 @@ int main(void) {
 #endif
 	//siFont f = siapp_fontLoad(win, "res/calibri.ttf", 64);
 
+#if 0
+	for_range (i, 0, 63) {
+		u32 m = i / 10;
+		i32 base = (i - 10 * m) + 9;
+
+		u32 actual = (m * 3) + ((base > -3) + (base > -6) + (base > -11));
+		si_printf("%i: %i %llu\n", i, actual, SI_BIT(i));
+	}
+#endif
+
 	while (siapp_windowIsRunning(win) && !siapp_windowKeyClicked(win, SK_ESC)) {
-		const siWindowEvent* e =  siapp_windowUpdate(win, false);
+		const siWindowEvent* e = siapp_windowUpdate(win, false);
+
+		si_printf("%i\n", curRender);
 
 		u32 key = e->curKey * siapp_windowKeyClicked(win, e->curKey);
 		switch (key) {
@@ -153,7 +166,6 @@ int main(void) {
 				static b32 fullscreen = true;
 				siapp_windowFullscreen(win, fullscreen);
 				fullscreen ^= true;
-				si_printf("yes\n");
 				break;
 			}
 			case SK_T: {
@@ -185,15 +197,16 @@ int main(void) {
 		}
 		if (siapp_windowKeyMul(win, SK_SHIFT_L, SK_T)) {
 			usize len = 0;
-			char title[255];
-			siapp_messageBox(
+			char title[255] = {0};
+			siapp_messageBoxEx(
+				win,
 				"Enter the title", "Type out the new Window's title and once you're done, hit enter.",
 				SI_MESSAGE_BOX_OK, SI_MESSAGE_BOX_ICON_INFO
 			);
 
 			while (true) {
 				e = siapp_windowUpdate(win, true);
-				SI_STOPIF(e->curKey == SK_ENTER, break);
+				SI_STOPIF(e->type.keyPress && e->curKey == SK_ENTER, break);
 
 				if (e->charBufferLen != 0 && len + e->charBufferLen < sizeof(title)) {
 					memcpy(&title[len], e->charBuffer, e->charBufferLen);
@@ -201,6 +214,7 @@ int main(void) {
 				}
 			}
 			siapp_windowTitleSetEx(win, title, len);
+			continue;
 		}
 
 		for_range (i, 0, countof(drops)) {
