@@ -219,7 +219,7 @@ extern "C" {
 	#define SI_CPU_X86 1
 	#define SI_CACHE_LINE_SIZE 64
 
-#elif defined(_M_PPC) || defined(__powerpc__) || defined(__powerpc64__) || defined(_ARCH_PPC) || #defined(__ppc64__)
+#elif defined(_M_PPC) || defined(__powerpc__) || defined(__powerpc64__) || defined(_ARCH_PPC) || defined(__ppc64__)
 	#define SI_CPU_PPC 1
 	#define SI_CPU_PPC64 (__powerpc64__ || __ppc64__)
 	#define SI_CACHE_LINE_SIZE 128
@@ -496,29 +496,29 @@ SI_STATIC_ASSERT(false == 0);
 #if defined(SI_COMPILER_MSVC)
 	/* asm - ASSEMBLY
 	 * Inserts inline assembly into the program using MSVC assembly syntax. */
-	#define si_asm(... /* asm */) __asm  { __VA_ARGS__ }
+	#define si_asm(...) __asm  { __VA_ARGS__ }
 #else
 	#if defined(SI_CPU_X86) && defined(SI_GNUC_COMPLIANT)
-		/* asm - cstring | ...IOR - ASM INPUT, OUTPUT OR REGISTERS
+		/* asmStr - cstring | ...IOR - ASM INPUT, OUTPUT OR REGISTERS
 		 * Inserts inline assembly into the program using GNU C assembly syntax. */
-		#define si_asm(asm, .../* IOR */) \
+		#define si_asm(asmStr, ...) \
 			__asm__ __volatile__( \
 				".intel_syntax noprefix" SI_ASM_NL \
-				asm SI_ASM_NL \
+				asmStr SI_ASM_NL \
 				".att_syntax" \
 				__VA_ARGS__ \
 				)
-
-		#define SI_ASM_INPUT(...) : __VA_ARGS__
-		#define SI_ASM_OUTPUT(...) : __VA_ARGS__
-		#define SI_ASM_REGISTERS(...) : __VA_ARGS__
-		#define SI_ASM_NL "\n"
 	#else
-		/* asm - cstring | ...IOR - ASM INPUT, OUTPUT OR REGISTERS
+		/* asmStr - cstring | ...IOR - ASM INPUT, OUTPUT OR REGISTERS
 		 * Inserts inline assembly into the program using GNU C assembly syntax. */
-		#define si_asm(asm, .../ * IOR */) __asm__ __volatile__(asm __VA_ARGS__)
+		#define si_asm(asmStr, ...) __asm__ __volatile__(asmStr __VA_ARGS__)
 	#endif
 #endif
+
+#define SI_ASM_INPUT(...) : __VA_ARGS__
+#define SI_ASM_OUTPUT(...) : __VA_ARGS__
+#define SI_ASM_REGISTERS(...) : __VA_ARGS__
+#define SI_ASM_NL "\n"
 
 
 
@@ -1006,16 +1006,22 @@ typedef struct {
 /* Contains a function pointer for siThread. */
 typedef rawptr SI_FUNC_PTR(siFunction, (rawptr));
 
+#if defined(SI_TYPEOF_USED)
 /* func - NAME
- * A hasty macro solution for inputting a function into a thread. */
+ * A hasty macro solution for inputting a function into a thread without a warning. */
 #define siFunc(func) SI_FUNC_PTR_CHANGE(func, siFunction)
+#else
+/* func - NAME
+ * A hasty macro solution for inputting a function into a thread that will result in a warning. */
+#define siFunc(func) (siFunction)(func)
+#endif
 
 #if defined(SI_TYPEOF_USED)
 /* func1 - NAME | newType - TYPE
  * Changes the type of the 1st specified function to newly specified one in an ISO C
  * portable fashion. */
 #define SI_FUNC_PTR_CHANGE(func1, newType) \
-	SI_FUNC_PTR_CHANGE_EX(func1, typeof(func1), newType)
+	SI_FUNC_PTR_CHANGE_EX(func1, typeof(&func1), newType)
 #endif
 /* func1 - NAME | ogType - TYPE | newType - TYPE
  * Changes the type of the 1st specified function to second one's in an ISO C
@@ -1100,9 +1106,9 @@ typedef struct { f32 x, y, z, w; } siVec4;
  * Macro to define a 4D vector from a regular 'siRect' struct. */
 #define SI_VEC4R(rect) SI_VEC4((rect).x, (rect).y, (rect).width, (rect).height)
 
-/* */
+/* A struct containing 4 floats used for coordinates */
 typedef struct { f32 x1, x2, y1, y2; } siCoordsF32;
-/* */
+/* A struct containing 4 u32s used for coordinates */
 typedef struct { u32 x1, x2, y1, y2; } siCoordsU32;
 
 

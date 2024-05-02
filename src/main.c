@@ -1,4 +1,3 @@
-#include <math.h>
 #include <siliapp.h>
 #define DISABLE_SECOND_WINDOW  1 /* NOTE(EimaMei): For whatever reason, creating a
 								   window on a subthread is not allowed  on MacOS,
@@ -34,7 +33,7 @@ int main(void) {
 	siWindow* win = siapp_windowMake(
 		"Example window | ĄČĘĖĮŠŲ | 「ケケア」",
 		SI_AREA(0, 0),
-		SI_WINDOW_DEFAULT | SI_WINDOW_OPTIMAL_SIZE
+		SI_WINDOW_DEFAULT | SI_WINDOW_OPTIMAL_SIZE | SI_WINDOW_NO_RESIZE
 	);
 	siapp_windowRendererMake(win, SI_RENDERING_CPU, 1, SI_AREA(1024, 1024), 2);
 	siapp_windowBackgroundSet(win, SI_RGB(128, 0, 0));
@@ -129,8 +128,6 @@ int main(void) {
 
 	while (siapp_windowIsRunning(win) && !siapp_windowKeyClicked(win, SK_ESC)) {
 		const siWindowEvent* e = siapp_windowUpdate(win, false);
-
-		si_printf("%i\n", curRender);
 
 		u32 key = e->curKey * siapp_windowKeyClicked(win, e->curKey);
 		switch (key) {

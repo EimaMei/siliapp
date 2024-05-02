@@ -331,7 +331,6 @@ typedef struct {
 	siKeyState mouseButtons[SI_MOUSE_COUNT];
 
 	siMouseWheelType mouseWheel;
-	i32 mouseScroll;
 
 	siPoint windowPos;
 	siArea windowSize;
@@ -1504,7 +1503,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			e->type.mouseScroll = true;
 			i32 delta = GET_WHEEL_DELTA_WPARAM(wParam);
 			e->mouseWheel = (delta < 0) ? SI_MOUSE_WHEEL_DOWN : SI_MOUSE_WHEEL_UP;
-			e->mouseScroll = delta;
 			break;
 		}
 		case WM_LBUTTONDOWN: {
@@ -2169,6 +2167,16 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 		XDefaultVisual(win->display, screen),
 		CWEventMask, &wa
 	);
+
+	if (arg & SI_WINDOW_NO_RESIZE) {
+		XSizeHints* sh = XAllocSizeHints();
+		sh->flags = (1L << 4) | (1L << 5);
+		sh->min_width = sh->max_width = size.width;
+		sh->min_height = sh->max_height = size.height;
+
+		XSetWMSizeHints(win->display, win->hwnd, sh, 40);
+		XFree(sh);
+	}
 
 	XStoreName(win->display, win->hwnd, name);
 	XChangeProperty(
