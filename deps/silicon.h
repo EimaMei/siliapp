@@ -176,42 +176,46 @@ typedef CGRect NSRect;
 typedef CGPoint NSPoint;
 typedef CGSize NSSize;
 
-typedef struct objc_object NSResponder;
-typedef struct objc_object NSWindow;
-typedef struct objc_object NSWindowController;
-typedef struct objc_object NSApplication;
-typedef struct objc_object NSEvent;
-typedef struct objc_object NSScreen;
-typedef struct objc_object NSColor;
-typedef struct objc_object NSCursor;
-typedef struct objc_object NSPasteboard;
-typedef struct objc_object NSOpenGLContext;
-typedef struct objc_object NSOpenGLPixelFormat;
-typedef struct objc_object NSDraggingInfo;
-typedef struct objc_object NSImageRep;
-typedef struct objc_object NSGraphicsContext;
-typedef struct objc_object NSBitmapImageRep;
-typedef struct objc_object NSMenu;
-typedef struct objc_object NSMenuItem;
-typedef struct objc_object NSImage;
-typedef struct objc_object NSView;
-typedef struct objc_object NSViewController;
-typedef struct objc_object NSAutoreleasePool;
-typedef struct objc_object NSFontManager;
-typedef struct objc_object NSTextField;
-typedef struct objc_object NSProcessInfo;
-typedef struct objc_object NSButton;
-typedef struct objc_object NSComboBox;
-typedef struct objc_object NSSlider;
-typedef struct objc_object NSProgressIndicator;
-typedef struct objc_object NSSavePanel;
-typedef struct objc_object NSOpenPanel;
-typedef struct objc_object NSColorPanel;
-typedef struct objc_object NSBundle;
-typedef struct objc_object NSNotification;
-typedef struct objc_object NSNotificationCenter;
-typedef struct objc_object CALayer;
-typedef struct objc_object NSAlert;
+#define SIC_OBJC_TYPE(type) typedef struct objc_object type
+
+SIC_OBJC_TYPE(NSResponder);
+SIC_OBJC_TYPE(NSWindow);
+SIC_OBJC_TYPE(NSWindowController);
+SIC_OBJC_TYPE(NSApplication);
+SIC_OBJC_TYPE(NSEvent);
+SIC_OBJC_TYPE(NSScreen);
+SIC_OBJC_TYPE(NSColor);
+SIC_OBJC_TYPE(NSCursor);
+SIC_OBJC_TYPE(NSPasteboard);
+SIC_OBJC_TYPE(NSOpenGLContext);
+SIC_OBJC_TYPE(NSOpenGLPixelFormat);
+SIC_OBJC_TYPE(NSDraggingInfo);
+SIC_OBJC_TYPE(NSImageRep);
+SIC_OBJC_TYPE(NSGraphicsContext);
+SIC_OBJC_TYPE(NSBitmapImageRep);
+SIC_OBJC_TYPE(NSMenu);
+SIC_OBJC_TYPE(NSMenuItem);
+SIC_OBJC_TYPE(NSImage);
+SIC_OBJC_TYPE(NSView);
+SIC_OBJC_TYPE(NSViewController);
+SIC_OBJC_TYPE(NSAutoreleasePool);
+SIC_OBJC_TYPE(NSFontManager);
+SIC_OBJC_TYPE(NSTextField);
+SIC_OBJC_TYPE(NSProcessInfo);
+SIC_OBJC_TYPE(NSButton);
+SIC_OBJC_TYPE(NSComboBox);
+SIC_OBJC_TYPE(NSSlider);
+SIC_OBJC_TYPE(NSProgressIndicator);
+SIC_OBJC_TYPE(NSSavePanel);
+SIC_OBJC_TYPE(NSOpenPanel);
+SIC_OBJC_TYPE(NSColorPanel);
+SIC_OBJC_TYPE(NSBundle);
+SIC_OBJC_TYPE(NSNotification);
+SIC_OBJC_TYPE(NSNotificationCenter);
+SIC_OBJC_TYPE(CALayer);
+SIC_OBJC_TYPE(NSAlert);
+SIC_OBJC_TYPE(NSUserDefaults);
+SIC_OBJC_TYPE(NSAppearance);
 
 typedef NSInteger NSModalResponse;
 typedef NSView NSOpenGLView;
@@ -219,27 +223,28 @@ typedef NSString* NSPasteboardType;
 typedef NSString* NSColorSpaceName;
 typedef NSString* NSNotificationName;
 typedef NSString* NSRunLoopMode;
+typedef NSString* NSAppearanceName;
 
 
 #if defined(__WIN32__)
-    #undef FOUNDATION_EXPORT
-    #if defined(NSBUILDINGFOUNDATION)
+	#undef FOUNDATION_EXPORT
+	#if defined(NSBUILDINGFOUNDATION)
 	#define FOUNDATION_EXPORT __declspec(dllexport) extern
-    #else
+	#else
 	#define FOUNDATION_EXPORT __declspec(dllimport) extern
-    #endif
-    #if !defined(FOUNDATION_IMPORT)
+	#endif
+	#if !defined(FOUNDATION_IMPORT)
 	#define FOUNDATION_IMPORT __declspec(dllimport) extern
-    #endif
+	#endif
 #endif
 
 #if defined(__cplusplus)
-    #define FOUNDATION_EXPORT extern "C"
-    #define FOUNDATION_IMPORT extern "C"
+	#define FOUNDATION_EXPORT extern "C"
+	#define FOUNDATION_IMPORT extern "C"
 #endif
 
 #if !defined(FOUNDATION_EXPORT)
-    #define FOUNDATION_EXPORT extern
+	#define FOUNDATION_EXPORT extern
 #endif
 
 
@@ -375,7 +380,7 @@ typedef NS_ENUM(NSUInteger, NSEventModifierFlags) {
 	NSEventModifierFlagHelp               = 1 << 22, // Set if the Help key is pressed.
 	NSEventModifierFlagFunction           = 1 << 23, // Set if any function key is pressed.
 };
-	// Used to retrieve only the device-independent modifier flags, allowing applications to mask off the device-dependent modifier flags, including event coalescing information.
+// Used to retrieve only the device-independent modifier flags, allowing applications to mask off the device-dependent modifier flags, including event coalescing information.
 #define NSEventModifierFlagDeviceIndependentFlagsMask 0xffff0000UL
 
 typedef NS_ENUM(NSUInteger, NSDragOperation) {
@@ -443,38 +448,38 @@ typedef NS_ENUM(NSUInteger, NSAutoresizingMaskOptions) {
 };
 
 typedef NS_ENUM(NSUInteger, NSBorderType) {
-    NSNoBorder				= 0,
-    NSLineBorder			= 1,
-    NSBezelBorder			= 2,
-    NSGrooveBorder			= 3
+	NSNoBorder				= 0,
+	NSLineBorder			= 1,
+	NSBezelBorder			= 2,
+	NSGrooveBorder			= 3
 };
 
 typedef NS_ENUM(NSInteger, NSViewLayerContentsRedrawPolicy) {
-    // Leave the layer's contents alone. Never mark the layer as needing display, or draw the view's contents to the layer
-    NSViewLayerContentsRedrawNever = 0,
-    // Map view -setNeedsDisplay...: activity to the layer, and redraw affected layer parts by invoking the view's -drawRect:, but don't mark the view or layer as needing display when the view's size changes.
-    NSViewLayerContentsRedrawOnSetNeedsDisplay = 1,
-    // Resize the layer and redraw the view to the layer when the view's size changes. If the resize is animated, AppKit will drive the resize animation itself and will do this resize+redraw at each step of the animation. Affected parts of the layer will also be redrawn when the view is marked as needing display. (This mode is a superset of NSViewLayerContentsRedrawOnSetNeedsDisplay.)
-    NSViewLayerContentsRedrawDuringViewResize = 2,
-    // Resize the layer and redraw the view to the layer when the view's size changes. This will be done just once at the beginning of a resize animation, not at each frame of the animation. Affected parts of the layer will also be redrawn when the view is marked as needing display. (This mode is a superset of NSViewLayerContentsRedrawOnSetNeedsDisplay.)
-    NSViewLayerContentsRedrawBeforeViewResize = 3,
-    // When a view is resized, the layer contents will be redrawn once and the contents will crossfade from the old value to the new value. Use this in conjunction with the layerContentsPlacement to get a nice crossfade animation for complex layer-backed views that can't correctly update on each step of the animation
-    NSViewLayerContentsRedrawCrossfade API_AVAILABLE(macos(10.9)) = 4
+	// Leave the layer's contents alone. Never mark the layer as needing display, or draw the view's contents to the layer
+	NSViewLayerContentsRedrawNever = 0,
+	// Map view -setNeedsDisplay...: activity to the layer, and redraw affected layer parts by invoking the view's -drawRect:, but don't mark the view or layer as needing display when the view's size changes.
+	NSViewLayerContentsRedrawOnSetNeedsDisplay = 1,
+	// Resize the layer and redraw the view to the layer when the view's size changes. If the resize is animated, AppKit will drive the resize animation itself and will do this resize+redraw at each step of the animation. Affected parts of the layer will also be redrawn when the view is marked as needing display. (This mode is a superset of NSViewLayerContentsRedrawOnSetNeedsDisplay.)
+	NSViewLayerContentsRedrawDuringViewResize = 2,
+	// Resize the layer and redraw the view to the layer when the view's size changes. This will be done just once at the beginning of a resize animation, not at each frame of the animation. Affected parts of the layer will also be redrawn when the view is marked as needing display. (This mode is a superset of NSViewLayerContentsRedrawOnSetNeedsDisplay.)
+	NSViewLayerContentsRedrawBeforeViewResize = 3,
+	// When a view is resized, the layer contents will be redrawn once and the contents will crossfade from the old value to the new value. Use this in conjunction with the layerContentsPlacement to get a nice crossfade animation for complex layer-backed views that can't correctly update on each step of the animation
+	NSViewLayerContentsRedrawCrossfade API_AVAILABLE(macos(10.9)) = 4
 } API_AVAILABLE(macos(10.6));
 
 typedef NS_ENUM(NSInteger, NSViewLayerContentsPlacement) {
-    NSViewLayerContentsPlacementScaleAxesIndependently      =  0,
-    NSViewLayerContentsPlacementScaleProportionallyToFit    =  1,
-    NSViewLayerContentsPlacementScaleProportionallyToFill   =  2,
-    NSViewLayerContentsPlacementCenter                      =  3,
-    NSViewLayerContentsPlacementTop                         =  4,
-    NSViewLayerContentsPlacementTopRight                    =  5,
-    NSViewLayerContentsPlacementRight                       =  6,
-    NSViewLayerContentsPlacementBottomRight                 =  7,
-    NSViewLayerContentsPlacementBottom                      =  8,
-    NSViewLayerContentsPlacementBottomLeft                  =  9,
-    NSViewLayerContentsPlacementLeft                        = 10,
-    NSViewLayerContentsPlacementTopLeft                     = 11
+	NSViewLayerContentsPlacementScaleAxesIndependently      =  0,
+	NSViewLayerContentsPlacementScaleProportionallyToFit    =  1,
+	NSViewLayerContentsPlacementScaleProportionallyToFill   =  2,
+	NSViewLayerContentsPlacementCenter                      =  3,
+	NSViewLayerContentsPlacementTop                         =  4,
+	NSViewLayerContentsPlacementTopRight                    =  5,
+	NSViewLayerContentsPlacementRight                       =  6,
+	NSViewLayerContentsPlacementBottomRight                 =  7,
+	NSViewLayerContentsPlacementBottom                      =  8,
+	NSViewLayerContentsPlacementBottomLeft                  =  9,
+	NSViewLayerContentsPlacementLeft                        = 10,
+	NSViewLayerContentsPlacementTopLeft                     = 11
 } API_AVAILABLE(macos(10.6));
 
 typedef NSInteger NSTrackingRectTag;
@@ -672,6 +677,24 @@ static const NSWindowStyleMask NSNonactivatingPanelMask API_DEPRECATED_WITH_REPL
 static const NSWindowStyleMask NSHUDWindowMask API_DEPRECATED_WITH_REPLACEMENT("NSWindowStyleMaskHUDWindow", macos(10.0,10.12)) = NSWindowStyleMaskHUDWindow;
 static const NSWindowStyleMask NSUnscaledWindowMask API_DEPRECATED("NSUnscaledWindowMask is deprecated and has no effect. The scale factor for a window backing store is dynamic and dependent on the screen it is placed on.", macos(10.0,10.9)) = 1 << 11;
 
+APPKIT_EXTERN NSAppearanceName const NSAppearanceNameAqua API_AVAILABLE(macos(10.9));
+APPKIT_EXTERN NSAppearanceName const NSAppearanceNameDarkAqua API_AVAILABLE(macos(10.14));
+
+APPKIT_EXTERN NSAppearanceName const NSAppearanceNameLightContent API_DEPRECATED("Light content should use the default Aqua apppearance.", macos(10.9,10.10));
+
+/* The following two Vibrant appearances should only be set on an NSVisualEffectView, or one of its container subviews.
+ */
+APPKIT_EXTERN NSAppearanceName const NSAppearanceNameVibrantDark API_AVAILABLE(macos(10.10));
+APPKIT_EXTERN NSAppearanceName const NSAppearanceNameVibrantLight API_AVAILABLE(macos(10.10));
+
+/* The following appearance names are for matching using bestMatchFromAppearancesWithNames:
+   Passing any of them to appearanceNamed: will return NULL
+ */
+APPKIT_EXTERN NSAppearanceName const NSAppearanceNameAccessibilityHighContrastAqua API_AVAILABLE(macos(10.14));
+APPKIT_EXTERN NSAppearanceName const NSAppearanceNameAccessibilityHighContrastDarkAqua API_AVAILABLE(macos(10.14));
+APPKIT_EXTERN NSAppearanceName const NSAppearanceNameAccessibilityHighContrastVibrantLight API_AVAILABLE(macos(10.14));
+APPKIT_EXTERN NSAppearanceName const NSAppearanceNameAccessibilityHighContrastVibrantDark API_AVAILABLE(macos(10.14));
+
 // Additional NSModalResponse values
 static const NSModalResponse NSModalResponseOK = 1;
 static const NSModalResponse NSModalResponseCancel = 0;
@@ -727,9 +750,9 @@ typedef NS_ENUM(NSUInteger, NSSearchPathDomainMask) {
 /* The default alert style is NSAlertStyleWarning.  NSAlertStyleCritical should be reserved for critical alerts and will cause the icon to be badged with a caution icon.
 */
 typedef NS_ENUM(NSUInteger, NSAlertStyle) {
-    NSAlertStyleWarning = 0,
-    NSAlertStyleInformational = 1,
-    NSAlertStyleCritical = 2
+	NSAlertStyleWarning = 0,
+	NSAlertStyleInformational = 1,
+	NSAlertStyleCritical = 2
 };
 
 /* These are additional NSModalResponse values used by NSAlert's -runModal and -beginSheetModalForWindow:completionHandler:.
@@ -959,7 +982,8 @@ si_define_property(NSApplication, NSMenu*, helpMenu, HelpMenu, application);
 si_define_property(NSApplication, NSMenu*, windowsMenu, WindowsMenu, application);
 /* The image used for the app’s icon. */
 si_define_property(NSApplication, NSImage*, applicationIconImage, ApplicationIconImage, application);
-
+/* (read-only) The appearance that AppKit uses to draw the app’s interface. */
+si_define_property_RO(NSApplication, NSAppearance*, effectiveAppearance, application);
 
 /* ============ NSScreen ============ */
 /* ====== NSScreen properties ====== */
@@ -984,12 +1008,14 @@ si_define_property(NSWindow, id, delegate, Delegate, window);
 si_define_property(NSWindow, NSViewController*, contentViewController, ContentViewController, window);
 /* The window’s content view, the highest accessible view object in the window’s view hierarchy. */
 si_define_property(NSWindow, NSView*, contentView, ContentView, window);
-/* Get/Set the title of the window. */
+/* */
 si_define_property(NSWindow, const char*, title, Title, window);
-/* Get/Set the background color of the window. */
+/* */
 si_define_property(NSWindow, NSColor*, backgroundColor, BackgroundColor, window);
-/* Get/set the opaque of the window. */
+/* A Boolean value that indicates whether the window is opaque. */
 si_define_property(NSWindow, bool, isOpaque, Opaque, window);
+/* A Boolean value that indicates whether the window has a shadow. */
+si_define_property(NSWindow, bool, hasShadow, HasShadow, window);
 /* The window’s alpha value. */
 si_define_property(NSWindow, CGFloat, alphaValue, AlphaValue, window);
 /* A Boolean value that indicates whether the window accepts mouse-moved events. */
@@ -1035,10 +1061,14 @@ SICDEF void NSWindow_center(NSWindow* window);
 SICDEF void NSWindow_makeMainWindow(NSWindow* window);
 /* */
 SICDEF void NSWindow_setFrameAndDisplay(NSWindow* window, NSRect frame, bool display, bool animate);
-/* */
-SICDEF void NSWindow_performMiniaturize(NSWindow* window, SEL s);
-/* */
-SICDEF void NSWindow_performZoom(NSWindow* window, SEL s);
+/* This action method simulates the user clicking the zoom box by momentarily
+ * highlighting the button and then zooming the window.*/
+SICDEF void NSWindow_performZoom(NSWindow* window, id sender);
+/* Simulates the user clicking the minimize button by momentarily highlighting
+ * the button, then minimizing the window. */
+SICDEF void NSWindow_performMiniaturize(NSWindow* window, id sender);
+/* De-minimizes the window. */
+SICDEF void NSWindow_deminiaturize(NSWindow* window, id sender);
 /* Registers a set of pasteboard types that the window accepts as the destination
  * of an image-dragging session. */
 SICDEF void NSWindow_registerForDraggedTypes(NSWindow* window, sicArray(NSPasteboardType) newTypes);
@@ -1491,6 +1521,22 @@ SICDEF bool CATransaction_disableActions(void);
 SICDEF void CATransaction_setDisableActions(bool flag);
 
 
+/* ============ NSUserDefaults ============ */
+/* ====== NSUserDefaults properties ====== */
+/* (read-only) Returns the shared defaults object. */
+SICDEF NSUserDefaults* NSUserDefaults_standardUserDefaults(void);
+
+/* ====== NSUserDefaults functions ====== */
+/* Returns the string associated with the specified key. */
+SICDEF char* NSUserDefaults_stringForKey(NSUserDefaults* defaults, char* defaultName);
+
+
+/* ============ NSAppearance ============ */
+/* ====== NSAppearance properties ====== */
+/* (read-only) The name of the appearance. */
+si_define_property_RO(NSAppearance, NSAppearanceName, name, appearance);
+
+
 /* ============ NSOpenGLView ============ */
 /* ====== NSOpenGLView functions ====== */
 /* Returns an NSOpenGLView object initialized with the specified frame rectangle and pixel format. */
@@ -1523,12 +1569,16 @@ si_define_property(NSOpenGLContext, NSView*, view, View, context);
 /* Returns an OpenGL pixel format object initialized with specified pixel format attribute data. */
 SICDEF NSOpenGLPixelFormat* NSOpenGLPixelFormat_initWithAttributes(const NSOpenGLPixelFormatAttribute* attribs);
 
+
+
 /* Creates a list of directory search paths. */
 #define NSSearchPathForDirectoriesInDomains _NSSearchPathForDirectoriesInDomains
 SICDEF sicArray(sicString) _NSSearchPathForDirectoriesInDomains(NSSearchPathDirectory directory, NSSearchPathDomainMask domainMask, bool expandTilde);
 /* Returns the logon name of the current user. */
 #define NSUserName _NSUserName
 SICDEF sicString _NSUserName(void);
+
+
 
 
 #ifdef SILICON_IMPLEMENTATION
@@ -1543,7 +1593,6 @@ bool SILICON_USE_SIARRAY = true;
 #define abi_objc_msgSend_stret objc_msgSend
 #define abi_objc_msgSend_fpret objc_msgSend
 #else /* __i386__ */
-/* x86 just uses abi_objc_msgSend_fpret and (NSColor *)objc_msgSend_id respectively */
 #define abi_objc_msgSend_stret objc_msgSend_stret
 #define abi_objc_msgSend_fpret objc_msgSend_fpret
 #endif
@@ -1851,8 +1900,6 @@ enum{
 	NS_AUTO_RELEASE_POOL_DRAIN_CODE,
 	NS_INFO_DICTIONARY_CODE,
 	NS_INFO_MAIN_BUNDLE_CODE,
-	NS_WINDOW_PERFORM_MINIATURIZE_CODE,
-	NS_WINDOW_PERFORM_ZOOM_CODE,
 	NS_WINDOW_STYLE_MASK_CODE,
 	NS_STRING_FROM_CLASS_CODE,
 	NS_STRING_IS_EQUAL_CODE,
@@ -2019,8 +2066,6 @@ void si_initNS(void) {
 	SI_NS_FUNCTIONS[NS_AUTO_RELEASE_POOL_DRAIN_CODE] = sel_registerName("drain");
 	SI_NS_FUNCTIONS[NS_INFO_DICTIONARY_CODE] = sel_registerName("infoDictionary");
 	SI_NS_FUNCTIONS[NS_INFO_MAIN_BUNDLE_CODE] = sel_registerName("mainBundle");
-	SI_NS_FUNCTIONS[NS_WINDOW_PERFORM_MINIATURIZE_CODE] = sel_registerName("performMiniaturize:");
-	SI_NS_FUNCTIONS[NS_WINDOW_PERFORM_ZOOM_CODE] = sel_registerName("performZoom:");
 	SI_NS_FUNCTIONS[NS_WINDOW_STYLE_MASK_CODE] = sel_registerName("styleMask");
 	SI_NS_FUNCTIONS[NS_GRAPHICS_CONTEXT_WITH_WINDOW_CODE] = sel_registerName("graphicsContextWithWindow:");
 	SI_NS_FUNCTIONS[NS_GRAPHICS_CONTEXT_FLUSH_GRAPHICS_CODE] = sel_registerName("flushGraphics:");
@@ -2208,6 +2253,7 @@ si_implement_property(NSApplication, NSMenu*, servicesMenu, ServicesMenu, applic
 si_implement_property(NSApplication, NSMenu*, helpMenu, HelpMenu, application)
 si_implement_property(NSApplication, NSMenu*, windowsMenu, WindowsMenu, application)
 si_implement_property(NSApplication, NSImage*, applicationIconImage, ApplicationIconImage, application)
+si_implement_property_RO(NSApplication, NSAppearance*, effectiveAppearance, application)
 
 void NSApplication_stop(NSApplication* application, void* view) {
 	objc_msgSend_void_id(application, sel_registerName("stop:"), view);
@@ -2315,6 +2361,7 @@ si_implement_property_RO(NSWindow, bool, isZoomed, window)
 si_implement_property(NSWindow, NSSize, minSize, MinSize, window)
 si_implement_property(NSWindow, NSSize, maxSize, MaxSize, window)
 si_implement_property(NSWindow, bool, isOpaque, Opaque, window)
+si_implement_property(NSWindow, bool, hasShadow, HasShadow, window)
 si_implement_property(NSWindow, NSColor*, backgroundColor, BackgroundColor, window)
 si_implement_property(NSWindow, CGFloat, alphaValue, AlphaValue, window)
 si_implement_property(NSWindow, bool, acceptsMouseMovedEvents, AcceptsMouseMovedEvents, window)
@@ -2350,13 +2397,14 @@ void NSWindow_setFrameAndDisplay(NSWindow* window, NSRect frame, bool display, b
 		(window, func, frame, display, animate);
 }
 
-void NSWindow_performMiniaturize(NSWindow* window, SEL s) {
-	void* func = SI_NS_FUNCTIONS[NS_WINDOW_PERFORM_MINIATURIZE_CODE];
-	objc_msgSend_void_SEL(window, func, s);
+void NSWindow_performMiniaturize(NSWindow* window, id sender) {
+	objc_msgSend_void_id(window, sel_registerName("performMiniaturize:"), sender);
 }
-void NSWindow_performZoom(NSWindow* window, SEL s) {
-	void* func = SI_NS_FUNCTIONS[NS_WINDOW_PERFORM_ZOOM_CODE];
-   objc_msgSend_void_SEL(window, func, s);
+void NSWindow_deminiaturize(NSWindow* window, id sender) {
+	objc_msgSend_void_id(window, sel_registerName("deminiaturize:"), sender);
+}
+void NSWindow_performZoom(NSWindow* window, id sender) {
+	objc_msgSend_void_id(window, sel_registerName("performZoom:"), sender);
 }
 
 void NSWindow_registerForDraggedTypes(NSWindow* window, sicArray(NSPasteboardType) newTypes) {
@@ -2946,6 +2994,27 @@ void CATransaction_setDisableActions(bool flag) {
 
 	objc_msgSend_void_bool(nsclass, func, flag);
 }
+
+NSUserDefaults* NSUserDefaults_standardUserDefaults(void) {
+  return objc_msgSend_id((id)objc_getClass("NSUserDefaults"), sel_registerName("standardUserDefaults"));
+}
+
+char* NSUserDefaults_stringForKey(NSUserDefaults* defaults, char* defaultName) {
+	NSString* strIn = NSString_stringWithUTF8String(defaultName);
+	NSString* strOut = objc_msgSend_id_id(defaults, sel_registerName("stringForKey:"), strIn);
+	char* res = nil;
+	if (strOut != nil) {
+		res = sic_stringInit(NSString_UTF8String(strOut));
+		NSRelease(strOut);
+	}
+
+	NSRelease(strIn);
+	return res;
+}
+
+
+si_implement_property_RO(NSAppearance, NSAppearanceName, name, appearance)
+
 
 si_implement_property_RO_STR(NSURL, const char*, path, url)
 

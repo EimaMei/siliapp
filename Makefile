@@ -1,19 +1,19 @@
-CC = w64gcc
+CC = gcc
 OUTPUT = build
 NAME = test
-OS = WINDOWS
+OS = MAC
 
 SRC-DIR = src
-SRC-FILES = $(notdir $(wildcard $(SRC-DIR)/*.c))
+SRC-FILES = $(notdir $(wildcard $(SRC-DIR)/*.m))
 
 DEPS-DIR = $(SRC-DIR)/deps
 DEPS-SRC = $(notdir $(wildcard $(DEPS-DIR)/*.c))
 
-INCLUDE = -I"include" -I"." -I"deps"
+INCLUDE = -objective-c -I"include" -I"." -I"deps"
 FLAGS = -std=c99 -Wall -Wextra -Wpedantic
 
 # do not edit this
-SRC-OBJ = $(addprefix $(OUTPUT)/, $(SRC-FILES:.c=.o))
+SRC-OBJ = $(addprefix $(OUTPUT)/, $(SRC-FILES:.m=.o))
 DEPS-OBJ = $(addprefix $(OUTPUT)/, $(DEPS-SRC:.c=.o))
 
 ifeq ($(OS),WINDOWS)
@@ -47,7 +47,7 @@ ifeq ($(OS),MAC)
 #make generateApp
 endif
 
-$(OUTPUT)/%.o: $(SRC-DIR)/%.c
+$(OUTPUT)/%.o: $(SRC-DIR)/%.m
 	$(CC) $(FLAGS) $(INCLUDE) -c $^ -o $(OUTPUT)/$(notdir $@)
 
 $(OUTPUT)/%.o: deps/%.h

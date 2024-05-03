@@ -534,9 +534,8 @@ typedef struct {
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	IFileOpenDialog* __pfd;
 	IShellItemArray* __items;
-#else
-	rawptr __data;
 #endif
+	rawptr data;
 } siSearchHandle;
 
 typedef struct {
@@ -850,7 +849,7 @@ void siapp_windowDragAreaEnd(siWindow* win, siDropEvent* event);
 
 
 /* Returns the current resolution of the screen. */
-siArea siapp_screenGetCurrentSize(void);
+siArea siapp_screenSizeGet(void);
 /* Returns the area of the resolution index. 0 is the lowest available. If the
  * specified index resolution doesn't exist, the function will return 'SI_AREA(-1, -1)'.
  * Using that you can find the end of the list by checking if the return's width is
@@ -1347,7 +1346,7 @@ u32 siapp__dropUpdatePress(IDropTarget* target, IDataObject* pDataObj, DWORD grf
 	e->mouse = SI_POINT(mouse.x, mouse.y);
 	e->mouseScaled = SI_VEC2(
 		(f32)mouse.x / win->scaleFactor.x,
-		(f32)mouse.x / win->scaleFactor.y
+		(f32)mouse.y / win->scaleFactor.y
 	);
 	e->type.mouseMove = true;
 	e->type.mousePress = true;
@@ -1411,7 +1410,7 @@ void siapp__dropUpdateRelease(IDropTarget* target, IDataObject* pDataObj, DWORD 
 	e->mouseRoot = SI_POINT(pt.x, pt.y);
 	e->mouseScaled = SI_VEC2(
 		(f32)mouse.x / win->scaleFactor.x,
-		(f32)mouse.x / win->scaleFactor.y
+		(f32)mouse.y / win->scaleFactor.y
 	);
 	e->mouse = SI_POINT(mouse.x, mouse.y);
 	e->type.mouseRelease = true;
@@ -1761,7 +1760,7 @@ void siapp__x11CheckStartup(void) {
 NSApplication* NSApp = nil;
 siDropEvent* curNode = nil;
 
-b32 si__osxWindowClose(NSWindow* self) {
+b32 si__osxWindowClose(void* self) {
 	siWindow* win = nil;
 	object_getInstanceVariable(self, "siWindow", (void*)&win);
 
@@ -1773,9 +1772,19 @@ NSSize si__osxWindowResize(void* self, SEL sel, NSSize frameSize) {
 	object_getInstanceVariable(self, "siWindow", (void*)&win);
 	SI_ASSERT_NOT_NULL(win);
 
-	siapp__resizeWindow(win, frameSize.width, frameSize.height);
+	siapp__resizeWindow(win, frameSize.width, frameSize.height, true);
 	return frameSize;
 	SI_UNUSED(sel);
+}
+
+void si__osxWindowMove(void* self) {
+	siWindow* win = nil;
+	object_getInstanceVariable(self, "siWindow", (void*)&win);
+	SI_ASSERT_NOT_NULL(win);
+
+	NSRect frame = NSWindow_frame(win->hwnd);
+	win->e.type.windowMove = true;
+	win->e.windowPos = SI_POINT(frame.origin.x, frame.origin.y);
 }
 
 NSSize si__osxWindowFullscreen(void* self, SEL sel, NSSize frameSize) {
@@ -2063,7 +2072,6 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 	win->arg = arg;
 	win->scaleFactor = SI_VEC2(1, 1);
 	win->cursor = SI_CURSOR_DEFAULT;
-	win->e = (siWindowEvent){0};
 	win->imageColor = SI_VEC4(1, 1, 1, 1);
 	win->renderType = SI_RENDERING_UNSET;
 	win->textColor = SI_VEC4(1, 1, 1, 1);
@@ -2079,12 +2087,12 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 
 	if (arg & SI_WINDOW_OPTIMAL_SIZE) {
 		SI_ASSERT_MSG(size.width == 0 && size.height == 0, "The selected resolution must be set to zeros beforehand to use 'SI_WINDOW_OPTIMAL_SIZE'.");
-		siArea area = siapp_screenGetCurrentSize();
+		siArea area = siapp_screenSizeGet();
 		size.width = area.width / 2;
 		size.height = area.height / 2;
 	}
 	if (arg & SI_WINDOW_CENTER) {
-		siArea area = siapp_screenGetCurrentSize();
+		siArea area = siapp_screenSizeGet();
 		pos.x = (area.width - size.width) / 2;
 		pos.y = (area.height - size.height) / 2;
 	}
@@ -2201,13 +2209,19 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 	);
 	XSetICFocus(win->__x11Xic);
 #elif defined(SIAPP_PLATFORM_API_COCOA)
+	i32 screenH = siapp_screenSizeGet().height;
+	screenH -= size.height;
 
-	NSWindow* hwnd = NSWindow_init(
-		NSMakeRect(pos.x, pos.y, size.width, size.height),
-		NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable,
+	NSBackingStoreType storeType = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable;
+	if (!(arg & SI_WINDOW_NO_RESIZE)) {
+		storeType |= NSWindowStyleMaskResizable;
+	}
+
+	win->hwnd = NSWindow_init(
+		NSMakeRect(pos.x, screenH - pos.y, size.width, size.height), storeType,
 		NSBackingStoreBuffered, false
 	);
-	NSWindow_setTitle(hwnd, name);
+	NSWindow_setTitle(win->hwnd, name);
 
 	Class delegateClass = objc_allocateClassPair(objc_getClass("NSObject"), "WindowDelegate", 0);
 	b32 res = class_addIvar(
@@ -2224,6 +2238,8 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 	si_class_def(delegateClass, "windowWillResize:toSize:", si__osxWindowResize, "{NSSize=ff}@:{NSSize=ff}");
 	si_class_def(delegateClass, "window:willUseFullScreenContentSize:", si__osxWindowFullscreen, "{NSSize=ff}@:{NSSize=ff}");
 	si_class_def(delegateClass, "windowWillUseStandardFrame:defaultFrame:", si__osxTest, "{NSRect=ffff}@:@{NSRect=ffff}");
+	si_class_def(delegateClass, "windowWillMove:", si__osxWindowMove, "v@:@");
+	si_class_def(delegateClass, "windowDidMove:", si__osxWindowMove, "v@:@");
 
 	si_class_def(delegateClass, "draggingEntered:", si__osxDraggingEntered, "l@:@");
 	si_class_def(delegateClass, "draggingUpdated:", si__osxDraggingUpdated, "l@:@");
@@ -2235,13 +2251,12 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 	id delegate = NSInit(NSAlloc(delegateClass));
 	object_setInstanceVariable(delegate, "siWindow", win);
 
-	NSWindow_setDelegate(hwnd, delegate);
-	NSView_setLayerContentsPlacement(NSWindow_contentView(hwnd), NSViewLayerContentsPlacementTopLeft);
-
+	NSWindow_setDelegate(win->hwnd, delegate);
+	NSView_setLayerContentsPlacement(NSWindow_contentView(win->hwnd), NSViewLayerContentsPlacementTopLeft);
 	NSApplication_finishLaunching(NSApp);
 
-	win->hwnd = hwnd;
 	win->delegate = delegate;
+	win->e.windowPos = pos;
 #endif
 
 	siapp__resizeWindow(win, size.width, size.height, false);
@@ -2716,6 +2731,7 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 		NSApplication_sendEvent(NSApp, event);
 	}
 
+	siArea screen = siapp_screenSizeGet();
 	while (true) {
 		NSEvent* event = NSApplication_nextEventMatchingMask(
 			NSApp, NSEventMaskAny, nil,
@@ -2730,7 +2746,40 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 			break;
 		}
 
+		static NSUInteger oldModifiers = 0;
 		switch (NSEvent_type(event)) {
+			case NSEventTypeFlagsChanged: {
+				NSUInteger modifiers = NSEvent_modifierFlags(event) & NSEventModifierFlagDeviceIndependentFlagsMask;
+				u32 cocoaKey = modifiers & ~oldModifiers;
+
+				b32 click = true;
+				siKeyType key;
+				switch (cocoaKey) {
+					case 0: {
+						SI_PANIC();
+						siFallthrough;
+					}
+					case NSEventModifierFlagCapsLock: key = SK_CAPS_LOCK; break;
+					case NSEventModifierFlagShift: key = SK_SHIFT_L; break;
+					case NSEventModifierFlagControl: key = SK_CTRL_L; break;
+					case NSEventModifierFlagOption: key = SK_ALT_L; break;
+					case NSEventModifierFlagCommand: key = SK_SYSTEM_L; break;
+					default: SI_PANIC();
+				}
+				out->curKey = key;
+
+				siKeyState* keyState = &out->keys[key];
+				keyState->clicked = click;
+				keyState->pressed = click;
+				keyState->released = !click;
+
+				SK_TO_INT(out->keys[SK__EVENT]) |= SI_BIT(7);
+				out->__private.keyCache[out->__private.keyCacheLen % 16] = key;
+				out->__private.keyCacheLen += 1;
+				oldModifiers = modifiers;
+
+				break;
+			}
 			case NSEventTypeKeyDown: {
 				siKeyType key = siapp_osKeyToSili(NSEvent_keyCode(event));
 
@@ -2769,6 +2818,22 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 				SK_TO_INT(out->keys[SK__EVENT]) |= SI_BIT(7);
 				out->__private.keyCache[out->__private.keyCacheLen % 16] = key;
 				out->__private.keyCacheLen += 1;
+				break;
+			}
+			case NSEventTypeLeftMouseDragged:
+			case NSEventTypeOtherMouseDragged:
+			case NSEventTypeRightMouseDragged:
+			case NSEventTypeMouseMoved: {
+				NSPoint pos = NSEvent_locationInWindow(event);
+				pos.y = screen.height - pos.y;
+
+				out->type.mouseMove = true;
+				out->mouseRoot = SI_POINT(out->windowPos.x + pos.x, pos.y - out->windowPos.y);
+				out->mouse = SI_POINT(pos.x, pos.y);
+				out->mouseScaled = SI_VEC2(
+					pos.x / win->scaleFactor.x,
+					pos.x / win->scaleFactor.y
+				);
 				break;
 			}
 		}
@@ -2901,8 +2966,12 @@ void siapp_windowMove(siWindow* win, siPoint pos) {
 #elif defined(SIAPP_PLATFORM_API_X11)
 	XMoveWindow(win->display, win->hwnd, pos.x, pos.y);
 	XFlush(win->display);
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	siArea size = win->e.windowSize;
+	i32 screenH = siapp_screenSizeGet().height - size.height;
+	NSRect frame = NSMakeRect(pos.x, screenH - pos.y, size.width, size.height);
+	NSWindow_setFrameAndDisplay(win->hwnd, frame, true, true);
 #endif
-
 }
 void siapp_windowResize(siWindow* win, siArea size) {
 	SI_ASSERT_NOT_NULL(win);
@@ -2912,6 +2981,11 @@ void siapp_windowResize(siWindow* win, siArea size) {
 #elif defined(SIAPP_PLATFORM_API_X11)
 	XResizeWindow(win->display, win->hwnd, size.width, size.height);
 	XFlush(win->display);
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	siPoint pos = win->e.windowPos;
+	i32 screenH = siapp_screenSizeGet().height - size.height;
+	NSRect frame = NSMakeRect(pos.x, screenH - pos.y, size.width, size.height);
+	NSWindow_setFrameAndDisplay(win->hwnd, frame, true, true);
 #endif
 
 	siapp__resizeWindow(win, size.width, size.height, true); // TODO(EimaMei): Is this needed?
@@ -2951,7 +3025,7 @@ void siapp_windowShow(siWindow* win, siWindowShowState state) {
 			break;
 		}
 		case SI_SHOW_MAXIMIZE: {
-			siArea size = siapp_screenGetCurrentSize();
+			siArea size = siapp_screenSizeGet();
 			siapp_windowMove(win, SI_POINT(0, 0));
 			siapp_windowResize(win, size);
 			break;
@@ -2963,12 +3037,29 @@ void siapp_windowShow(siWindow* win, siWindowShowState state) {
 		}
 	}
 #elif defined(SIAPP_PLATFORM_API_COCOA)
-	#error " "
-	if (show) {
-		NSWindow_orderFront(win->hwnd, nil);
-	}
-	else {
-		NSWindow_orderOut(win->hwnd, nil);
+	switch (state) {
+		case SI_SHOW_HIDE: {
+			NSWindow_orderOut(win->hwnd, nil);
+			break;
+		}
+		case SI_SHOW_ACTIVATE: {
+			NSWindow_orderFront(win->hwnd, nil);
+			break;
+		}
+		case SI_SHOW_MINIMIZE: {
+			NSWindow_performMiniaturize(win->hwnd, nil);
+			break;
+		}
+		case SI_SHOW_MAXIMIZE: {
+			siArea size = siapp_screenSizeGet();
+			siapp_windowMove(win, SI_POINT(0, 0));
+			siapp_windowResize(win, size);
+			break;
+		}
+		case SI_SHOW_RESTORE: {
+			NSWindow_deminiaturize(win->hwnd, nil);
+			break;
+		}
 	}
 #endif
 }
@@ -2982,7 +3073,7 @@ void siapp_windowFullscreen(siWindow* win, b32 fullscreen) {
 	if (fullscreen) {
 		win->rectBeforeFullscreen = SI_RECT_PA(win->e.windowPos, win->e.windowSize);
 
-		siArea size = siapp_screenGetCurrentSize();
+		siArea size = siapp_screenSizeGet();
 		SetWindowLong(win->hwnd, GWL_STYLE, style & ~WS_OVERLAPPEDWINDOW);
 		SetWindowPos(
 			win->hwnd, HWND_NOTOPMOST, 0, 0, size.width, size.height,
@@ -3013,7 +3104,8 @@ void siapp_windowFullscreen(siWindow* win, b32 fullscreen) {
 		SubstructureNotifyMask | SubstructureRedirectMask, &xev
 	);
 	XFlush(win->display);
-
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	objc_msgSend_void_id(win->hwnd, sel_registerName("toggleFullScreen:"), nil);
 #endif
 }
 
@@ -3102,6 +3194,17 @@ void siapp_windowBorderlessSet(const siWindow* win, b32 borderless) {
 		_MOTIF_WM_HINTS, _MOTIF_WM_HINTS,
 		32, PropModeReplace, (u8*)&hints, 5
 	);
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	NSBackingStoreType storeType = NSWindowStyleMaskBorderless;
+	if (!borderless) {
+		storeType = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable;
+	}
+	if (!(win->arg & SI_WINDOW_NO_RESIZE)) {
+		storeType |= NSWindowStyleMaskResizable;
+	}
+
+	NSWindow_setStyleMask(win->hwnd, storeType);
+	NSWindow_setHasShadow(win->hwnd, !borderless);
 #endif
 }
 
@@ -3492,7 +3595,7 @@ void siapp_windowDragAreaEnd(siWindow* win, siDropEvent* event) {
 }
 
 
-siArea siapp_screenGetCurrentSize(void) {
+siArea siapp_screenSizeGet(void) {
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	DEVMODEW mode = {0};
 	EnumDisplaySettingsW(nil, ENUM_CURRENT_SETTINGS, &mode);
@@ -3537,7 +3640,7 @@ siArea siapp_screenGetAvailableResolution(usize index) {
 b32 siapp_darkModeEnabled(void) {
 #if defined(SIAPP_PLATFORM_API_X11)
 	return false;
-#else
+#elif defined(SIAPP_PLATFORM_API_WIN32)
 	b32 lightMode = true;
 	DWORD len = sizeof(lightMode);
 	RegGetValueW(
@@ -3546,6 +3649,10 @@ b32 siapp_darkModeEnabled(void) {
 		L"AppsUseLightTheme", RRF_RT_REG_DWORD, nil, &lightMode, &len
 	);
 	return (lightMode == false);
+#else
+	NSUserDefaults* app = NSApplication_sharedApplication();
+	NSString* str = NSAppearance_name(NSApplication_effectiveAppearance(app));
+	return str == NSAppearanceNameDarkAqua;
 #endif
 }
 
@@ -3586,7 +3693,11 @@ void siapp_mouseMove(siPoint pos) {
 	XWarpPointer(SI_X11_DISPLAY, None, DefaultRootWindow(SI_X11_DISPLAY), 0, 0, 0, 0, pos.x, pos.y);
 	XFlush(SI_X11_DISPLAY);
 #else
-	#error " "
+	CGEventRef moveEvent = CGEventCreateMouseEvent(
+		nil, kCGEventMouseMoved, CGPointMake(pos.x, pos.y), 0
+	);
+	CGEventPost(kCGHIDEventTap, moveEvent);
+	CFRelease(moveEvent);
 #endif
 }
 usize siapp_clipboardTextGet(char* outBuffer, usize capacity) {
@@ -3882,7 +3993,7 @@ end:
 	usize totalAllocSize = sizeof(siArrayHeader) + (sizeof(size_t) + SI_MAX_PATH_LEN) * len;
 	SILICON_ALLOCATOR = malloc(totalAllocSize);
 
-	res.__cocoaData = NSPasteboard_readObjectsForClasses(
+	res.data = NSPasteboard_readObjectsForClasses(
 		NSDraggingInfo_draggingPasteboard(event.data), array, nil
 	);
 	res.len = len;
@@ -3937,11 +4048,11 @@ b32 siapp_dropEventPollEntry(siDropHandle* handle, siDropEntry* entry) {
 	handle->__index += len + 2;
 #elif defined(SIAPP_PLATFORM_API_COCOA)
 	if (handle->__index >= handle->len) {
-		free((size_t*)handle->__cocoaData - 1);
+		free((size_t*)handle->data - 1);
 		return false;
 	}
 
-	siString str = handle->__cocoaData[handle->__index];
+	siString str = handle->data[handle->__index];
 
 	entry->len = sic_arrayLen(str);
 	memcpy(entry->path, str, entry->len);
@@ -4526,7 +4637,7 @@ siSearchHandle siapp_fileManagerOpen(siSearchConfig config) {
 
 	siSearchHandle handle;
 	handle.len = NSArray_count(urls);
-	handle.__data = urls;
+	handle.data = panel;
 	handle.__index = 0;
 
 	return handle;
@@ -4539,11 +4650,15 @@ siSearchHandle siapp_fileManagerOpen(siSearchConfig config) {
 b32 siapp_searchPollEntry(siSearchHandle* handle, siSearchEntry* entry) {
 #if defined(SIAPP_PLATFORM_API_COCOA)
 	if (handle->__index >= handle->len) {
-		NSRelease(panel):
+		NSRelease(handle->data);
 		return false;
 	}
 
-	NSURL* url = NSArray_objectAtIndex(handle->__data, handle->__index);
+	SILICON_USE_SIARRAY = false;
+	NSArray* urls = (NSArray*)NSOpenPanel_URLs(handle->data);
+	SILICON_USE_SIARRAY = true;
+
+	NSURL* url = NSArray_objectAtIndex(urls, handle->__index);
 	const char* str = NSURL_path(url);
 	usize len = strlen(str);
 
@@ -6398,7 +6513,7 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 	XFree(fbList);
 	XFree(vi);
 #elif defined(SIAPP_PLATFORM_API_COCOA)
-	#error "Fix this"
+	#warning "Fix this"
 	NSOpenGLPixelFormatAttribute attribs[] = {
 		NSOpenGLPFANoRecovery,
 		NSOpenGLPFAAccelerated,
@@ -6413,7 +6528,7 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 		(glInfo.stereo) ? NSOpenGLPFAStereo : 0,
 		0
 	};
-	NSOpenGLPixelFormat* format = NSOpenGLPixelFormat_initWithAttributes(defaultAttribs);
+	NSOpenGLPixelFormat* format = NSOpenGLPixelFormat_initWithAttributes(attribs);
 	SI_ASSERT_NOT_NULL(format);
 
 	NSOpenGLContext* context = NSOpenGLContext_initWithFormat(format, nil);
@@ -6760,7 +6875,7 @@ b32 siapp_windowCPUInit(siWindow* win, u32 maxTexCount, siArea maxTexRes) {
 	SI_ASSERT_NOT_NULL(win);
 	siWinRenderingCtxCPU* cpu = &win->render.cpu;
 
-	siArea size = siapp_screenGetCurrentSize();
+	siArea size = siapp_screenSizeGet();
 	cpu->width = size.width * SI__CHANNEL_COUNT;
 	cpu->fps = 0;
 
@@ -6812,18 +6927,19 @@ b32 siapp_windowCPUInit(siWindow* win, u32 maxTexCount, siArea maxTexRes) {
 void siapp_windowCPURender(siWindow* win) {
 	SI_ASSERT_NOT_NULL(win);
 	siWinRenderingCtxCPU* cpu = &win->render.cpu;
+	siArea size = win->e.windowSize;
 
 #if defined(SIAPP_PLATFORM_API_X11)
 	XPutImage(
 		win->display, win->hwnd,
 		XDefaultGC(win->display, XDefaultScreen(win->display)), cpu->bitmap,
-		0, 0, 0, 0, win->e.windowSize.width, win->e.windowSize.height
+		0, 0, 0, 0, size.width, size.height
 	);
 #elif defined(SIAPP_PLATFORM_API_COCOA)
 	NSBitmapImageRep* rep = NSBitmapImageRep_initWithBitmapData(
-		&cpu->buffer, cpu->size.width, cpu->size.height, 8, 3, false, false,
+		&cpu->buffer, size.width, size.height, 8, 3, false, false,
 		NSDeviceRGBColorSpace, 0,
-		cpu->size.width * 3, 24
+		cpu->width, 24
 	);
 	id image = NSAlloc(objc_getClass("NSImage"));
 	NSImage_addRepresentation(image, rep);
@@ -6834,14 +6950,13 @@ void siapp_windowCPURender(siWindow* win) {
 	release(image);
 	release(rep);
 #elif defined(SIAPP_PLATFORM_API_WIN32)
-	BitBlt(win->hdc, 0, 0, win->e.windowSize.width, win->e.windowSize.height, cpu->hdc, 0, 0, SRCCOPY);
+	BitBlt(win->hdc, 0, 0, size.width, size.height, cpu->hdc, 0, 0, SRCCOPY);
 #endif
 
 	if (cpu->fps != 0) {
 		si_sleep(cpu->fps);
 	}
 }
-/* */
 
 void siapp_windowCPUDestroy(siWindow* win) {
 	SI_ASSERT_NOT_NULL(win);

@@ -4,6 +4,7 @@
 								   meaning you have to create and update your windows
 								   on the main thread only. */
 
+
 #if DISABLE_SECOND_WINDOW != 1
 void secondWindowLoop(siWindow* firstWindow);
 
@@ -24,16 +25,12 @@ b32 stopRenderingWin2 = false;
 // NSString_to_char memory leaks???
 // replace release with dealloc??
 
-#if 0
-	SI_WINDOW_BORDERLESS              = SI_BIT(2),
-	SI_WINDOW_RESIZABLE               = SI_BIT(3),
-#endif
 
 int main(void) {
 	siWindow* win = siapp_windowMake(
 		"Example window | ĄČĘĖĮŠŲ | 「ケケア」",
 		SI_AREA(0, 0),
-		SI_WINDOW_DEFAULT | SI_WINDOW_OPTIMAL_SIZE | SI_WINDOW_NO_RESIZE
+		SI_WINDOW_DEFAULT | SI_WINDOW_OPTIMAL_SIZE
 	);
 	siapp_windowRendererMake(win, SI_RENDERING_CPU, 1, SI_AREA(1024, 1024), 2);
 	siapp_windowBackgroundSet(win, SI_RGB(128, 0, 0));
@@ -129,6 +126,12 @@ int main(void) {
 	while (siapp_windowIsRunning(win) && !siapp_windowKeyClicked(win, SK_ESC)) {
 		const siWindowEvent* e = siapp_windowUpdate(win, false);
 
+
+		siKeyState s = siapp_windowKeyGet(win, SK_SYSTEM_L);
+
+		//si_printf("%u %u %u\n", s.clicked, s.pressed, s.released);
+		si_printf("%i %i\n", e->mouseRoot.x, e->mouseRoot.y);
+
 		u32 key = e->curKey * siapp_windowKeyClicked(win, e->curKey);
 		switch (key) {
 			case 0: { break; } /* The key is being pressed but the clicked frame has since passed. */
@@ -159,7 +162,11 @@ int main(void) {
 				SI_STOPIF(state > SI_SHOW_RESTORE, state = 0);
 				break;
 			}
+#if !defined(SIAPP_PLATFORM_API_COCOA)
 			case SK_F11: {
+#else
+			case SK_F: {
+#endif
 				static b32 fullscreen = true;
 				siapp_windowFullscreen(win, fullscreen);
 				fullscreen ^= true;
