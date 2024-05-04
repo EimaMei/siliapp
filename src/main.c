@@ -126,11 +126,18 @@ int main(void) {
 	while (siapp_windowIsRunning(win) && !siapp_windowKeyClicked(win, SK_ESC)) {
 		const siWindowEvent* e = siapp_windowUpdate(win, false);
 
-
-		siKeyState s = siapp_windowKeyGet(win, SK_SYSTEM_L);
-
-		//si_printf("%u %u %u\n", s.clicked, s.pressed, s.released);
-		si_printf("%i %i\n", e->mouseRoot.x, e->mouseRoot.y);
+		if (0) {
+		siKeyState s0 = siapp_windowKeyGet(win, SK_SYSTEM_L);
+		siKeyState s1 = siapp_windowKeyGet(win, SK_ALT_L);
+		siKeyState s2 = siapp_windowKeyGet(win, SK_CAPS_LOCK);
+		si_printf(
+			"SYS: [%u, %u, %u], ALT: [%u, %u, %u], CAPS: [%u %u %u]\n",
+			s0.clicked, s0.pressed, s0.released,
+			s1.clicked, s1.pressed, s1.released,
+			s2.clicked, s2.pressed, s2.released
+		);
+		}
+		//si_printf("%i %i\n", e->mouseRoot.x, e->mouseRoot.y);
 
 		u32 key = e->curKey * siapp_windowKeyClicked(win, e->curKey);
 		switch (key) {
@@ -274,6 +281,7 @@ int main(void) {
 		secondWindowLoop(win2);
 #endif
 	}
+		si_printf("test\n");
     siapp_cursorFree(customCursor);
 	//siapp_fontFree(f);
 

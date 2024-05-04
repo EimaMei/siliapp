@@ -109,6 +109,7 @@ extern "C" {
 
 	#define SIAPP_PLATFORM_API_WIN32
 #elif defined(SI_SYSTEM_OSX)
+	#include <IOKit/IOKitLib.h>
 	#define SIAPP_PLATFORM_API_COCOA
 #endif
 
@@ -477,7 +478,7 @@ typedef struct {
 	Window hwnd;
 #elif defined(SIAPP_PLATFORM_API_COCOA)
 	void* hwnd;
-	void* delegate;
+	void* allocatedClasses[2];
 #endif
 
 	union {
@@ -1760,6 +1761,24 @@ void siapp__x11CheckStartup(void) {
 NSApplication* NSApp = nil;
 siDropEvent* curNode = nil;
 
+
+siDllProc SI_COCOA_IOKIT = nil;
+NSUInteger SI_COCOA_OLD_MODIFIERS = 0;
+
+typedef CFMutableDictionaryRef SI_FUNC_PTR(IOServiceMatchingPROC, (const char* name));
+typedef io_service_t SI_FUNC_PTR(IOServiceGetMatchingServicePROC, (mach_port_t mainPort, CFDictionaryRef	matching));
+typedef kern_return_t SI_FUNC_PTR(IOServiceOpenPROC, (io_service_t service, task_port_t	owningTask, uint32_t type, io_connect_t* connect));
+typedef kern_return_t SI_FUNC_PTR(IOHIDGetModifierLockStatePROC, (io_connect_t handle, int selector, bool *state));
+typedef kern_return_t SI_FUNC_PTR(IOObjectReleasePROC, (io_object_t	object));
+typedef kern_return_t SI_FUNC_PTR(IOServiceClosePROC, (io_connect_t	connect));
+
+IOServiceMatchingPROC si_IOServiceMatching;
+IOServiceGetMatchingServicePROC si_IOServiceGetMatchingService;
+IOServiceOpenPROC si_IOServiceOpen;
+IOHIDGetModifierLockStatePROC si_IOHIDGetModifierLockState;
+IOObjectReleasePROC si_IOObjectRelease;
+IOServiceClosePROC si_IOServiceClose;
+
 b32 si__osxWindowClose(void* self) {
 	siWindow* win = nil;
 	object_getInstanceVariable(self, "siWindow", (void*)&win);
@@ -1787,6 +1806,25 @@ void si__osxWindowMove(void* self) {
 	win->e.windowPos = SI_POINT(frame.origin.x, frame.origin.y);
 }
 
+void si__osxWindowFocus(void* self) {
+	siWindow* win = nil;
+	object_getInstanceVariable(self, "siWindow", (void*)&win);
+	SI_ASSERT_NOT_NULL(win);
+
+
+	//NSApplication_activateIgnoringOtherApps(NSApp, true);
+}
+void si__osxWindowFocusLost(void* self) {
+	siWindow* win = nil;
+	object_getInstanceVariable(self, "siWindow", (void*)&win);
+	SI_ASSERT_NOT_NULL(win);
+
+	//SI_PANIC();
+}
+b32 si__osxViewResponder(void) {
+	return true;
+}
+
 NSSize si__osxWindowFullscreen(void* self, SEL sel, NSSize frameSize) {
 	return si__osxWindowResize(self, sel, frameSize);
 }
@@ -1796,8 +1834,6 @@ NSRect si__osxTest(id self, SEL sel, NSWindow* window, NSRect newFrame) {
 	return newFrame;
 	SI_UNUSED(window);
 }
-b32 si__osxAcceptsFirstResponder(void) { si_printf("yes\n"); return true; }
-b32 si__osxPerformKeyEquivalent(void) { si_printf("yues2\n"); return true; }
 
 NSDragOperation si__osxDraggingEntered(id self, SEL sel, id sender) {
 	siWindow* win = nil;
@@ -2082,6 +2118,7 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 		NSApp = NSApplication_sharedApplication();
 		NSApplication_setActivationPolicy(NSApp, NSApplicationActivationPolicyRegular);
 		si_func_to_SEL_with_name("NSObject", "windowShouldClose", (void*)si__osxWindowClose);
+		NSApplication_finishLaunching(NSApp);
 	}
 #endif
 
@@ -2117,7 +2154,6 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 		DwmSetWindowAttribute = si_dllProcAddressFuncEx(SI_WIN32_DWMAPI, DwmSetWindowAttribute, DwmSetWindowAttributeSIPROC);
 
 	}
-	SI_WINDOWS_NUM += 1;
 
 	WNDCLASSW class = {0};
 	class.style = CS_HREDRAW | CS_VREDRAW;
@@ -2224,6 +2260,7 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 	NSWindow_setTitle(win->hwnd, name);
 
 	Class delegateClass = objc_allocateClassPair(objc_getClass("NSObject"), "WindowDelegate", 0);
+	Class viewClass = objc_allocateClassPair(objc_getClass("NSView"), "ObjcYraVelnioPrakeiksmas", 0);
 	b32 res = class_addIvar(
 		delegateClass, "siWindow",
 		sizeof(siWindow*), rint(log2(sizeof(siWindow*))),
@@ -2248,17 +2285,96 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 	si_class_def(delegateClass, "prepareForDragOperation:", si__osxPrepareForDragOperation, "B@:@");
 	si_class_def(delegateClass, "performDragOperation:", si__osxPerformDragOperation, "B@:@");
 
+	si_class_def(viewClass, "acceptsFirstResponder", si__osxViewResponder, "B@:");
+	si_class_def(viewClass, "canBecomeKeyView", si__osxViewResponder, "B@:");
+	si_class_def(viewClass, "performKeyEquivalent:", si__osxViewResponder, "B@:@");
+#undef si_class_def
+
 	id delegate = NSInit(NSAlloc(delegateClass));
 	object_setInstanceVariable(delegate, "siWindow", win);
 
 	NSWindow_setDelegate(win->hwnd, delegate);
-	NSView_setLayerContentsPlacement(NSWindow_contentView(win->hwnd), NSViewLayerContentsPlacementTopLeft);
-	NSApplication_finishLaunching(NSApp);
+	NSWindow_makeKeyWindow(win->hwnd);
 
-	win->delegate = delegate;
+	id subview = NSInit(NSAlloc(viewClass));
+	NSView* view = NSWindow_contentView(win->hwnd);
+	NSView_setLayerContentsPlacement(view, NSViewLayerContentsPlacementTopLeft);
+	NSView_addSubview(view, subview);
+	objc_msgSend_void_id(win->hwnd, sel_registerName("makeFirstResponder:"), view);
+
+	win->allocatedClasses[0] = delegate;
+	win->allocatedClasses[1] = subview;
 	win->e.windowPos = pos;
-#endif
 
+	{
+		if (!SI_COCOA_IOKIT) {
+			SI_COCOA_IOKIT = si_dllLoad("/System/Library/Frameworks/IOKit.framework/Resources/BridgeSupport/IOKit.dylib");
+
+			si_IOServiceMatching = si_dllProcAddressFuncEx(SI_COCOA_IOKIT, IOServiceMatching, IOServiceMatchingPROC);
+			si_IOServiceGetMatchingService = si_dllProcAddressFuncEx(SI_COCOA_IOKIT, IOServiceGetMatchingService, IOServiceGetMatchingServicePROC);
+			si_IOServiceOpen = si_dllProcAddressFuncEx(SI_COCOA_IOKIT, IOServiceOpen, IOServiceOpenPROC);
+			si_IOHIDGetModifierLockState = si_dllProcAddressFuncEx(SI_COCOA_IOKIT, IOHIDGetModifierLockState, IOHIDGetModifierLockStatePROC);
+			si_IOObjectRelease = si_dllProcAddressFuncEx(SI_COCOA_IOKIT, IOObjectRelease, IOObjectReleasePROC);
+			si_IOServiceClose = si_dllProcAddressFuncEx(SI_COCOA_IOKIT, IOServiceClose, IOServiceClosePROC);
+		}
+
+		bool caps = false;
+		CFMutableDictionaryRef mdict = si_IOServiceMatching("IOHIDSystem");
+		io_service_t ios = si_IOServiceGetMatchingService(kIOMainPortDefault, (CFDictionaryRef)mdict);
+
+		io_connect_t ioc = 0;
+		si_IOServiceOpen(ios, mach_task_self(), 1, &ioc);
+
+		if (ioc != 0) {
+			si_IOHIDGetModifierLockState(ioc, 1, &caps);
+			si_IOObjectRelease(ios);
+			si_IOServiceClose(ioc);
+		}
+
+		siKeyState* key = &win->e.keys[SK_CAPS_LOCK];
+		key->pressed = caps;
+		SI_COCOA_OLD_MODIFIERS = NSEventModifierFlagCapsLock * caps;
+	}
+	{
+		siAllocator* stack = si_allocatorMake(SI_KILO(1));
+		SILICON_ALLOCATOR = si_salloc(64);
+		sicString name = NSProcessInfo_processName(NSProcessInfo_processInfo());
+		SILICON_ALLOCATOR = nil;
+
+		NSMenu* menu = NSAlloc(objc_getClass("NSMenu"));
+		NSApplication_setMainMenu(NSApp, menu);
+
+		char* about, *hide, *quit;
+		si_sprintfAlloc(stack, &about, "About %u", 50);
+
+		NSMenuItem* processItems[] = {
+			NSMenuItem_init(about, selector(orderFrontStandardAboutPanel), ""),
+			NSMenuItem_separatorItem(), // Adds a separator dash between the menu items.
+			NSMenuItem_init("Services", nil, ""), // Define this for later.
+			NSMenuItem_init(hide, selector(hide), "h"), // The same 'orderFrontStandardAboutPanel' behaviour happens for everything below (apart from the separator).
+			NSMenuItem_init("Hide Other", selector(hideOtherApplications), "h"),
+			NSMenuItem_init("Show All", selector(unhideAllApplications), ""),
+			NSMenuItem_separatorItem(),
+			NSMenuItem_init(quit, selector(terminate), "q")
+		};
+
+		NSMenuItem* menuItem = NSAlloc(objc_getClass("NSMenuItem"));
+		NSMenu* processMenu = NSMenu_init(name);
+		NSMenu_addItem(menu, menuItem);
+		NSMenuItem_setSubmenu(menuItem, processMenu);
+
+		for_range (i, 0, countof(processItems)) {
+			NSMenu_addItem(processMenu, processItems[i]);
+		}
+
+
+		NSRelease(processMenu);
+		NSRelease(menuItem);
+		NSRelease(menu);
+	}
+
+#endif
+	SI_WINDOWS_NUM += 1;
 	siapp__resizeWindow(win, size.width, size.height, false);
 
 	siWindowShowState state;
@@ -2285,6 +2401,9 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 	SI_ASSERT_MSG(
 		win->renderType != SI_RENDERING_UNSET, "You must call the 'siapp_windowRendererMake' function at least once."
 	);
+
+	b32 n = NSWindow_isKeyWindow(win->hwnd);
+	si_printf("%i\n", n);
 
 	siWindowEvent* out = &win->e;
 	win->cursorSet = false;
@@ -2746,27 +2865,30 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 			break;
 		}
 
-		static NSUInteger oldModifiers = 0;
 		switch (NSEvent_type(event)) {
 			case NSEventTypeFlagsChanged: {
 				NSUInteger modifiers = NSEvent_modifierFlags(event) & NSEventModifierFlagDeviceIndependentFlagsMask;
-				u32 cocoaKey = modifiers & ~oldModifiers;
-
+				NSUInteger cocoaKey = modifiers & ~SI_COCOA_OLD_MODIFIERS;
 				b32 click = true;
+
+
+				if (cocoaKey == 0) {
+					cocoaKey = ~modifiers & SI_COCOA_OLD_MODIFIERS;
+					click = false;
+				}
+
 				siKeyType key;
 				switch (cocoaKey) {
-					case 0: {
-						SI_PANIC();
-						siFallthrough;
-					}
-					case NSEventModifierFlagCapsLock: key = SK_CAPS_LOCK; break;
-					case NSEventModifierFlagShift: key = SK_SHIFT_L; break;
-					case NSEventModifierFlagControl: key = SK_CTRL_L; break;
-					case NSEventModifierFlagOption: key = SK_ALT_L; break;
-					case NSEventModifierFlagCommand: key = SK_SYSTEM_L; break;
-					default: SI_PANIC();
+					case NSEventModifierFlagCapsLock:   key = SK_CAPS_LOCK; break;
+					case NSEventModifierFlagShift:      key = SK_SHIFT_L; break;
+					case NSEventModifierFlagControl:    key = SK_CTRL_L; break;
+					case NSEventModifierFlagOption:     key = SK_ALT_L; break;
+					case NSEventModifierFlagCommand:    key = SK_SYSTEM_L; break;
+					default: continue; /* NOTE(EimaMei): We do not care about the FN, help and numpad keys. */
 				}
 				out->curKey = key;
+				b32* type = (b32*)&out->type;
+				*type |= SI_BIT(SI_EVENT_KEY_PRESS + !click);
 
 				siKeyState* keyState = &out->keys[key];
 				keyState->clicked = click;
@@ -2776,7 +2898,7 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 				SK_TO_INT(out->keys[SK__EVENT]) |= SI_BIT(7);
 				out->__private.keyCache[out->__private.keyCacheLen % 16] = key;
 				out->__private.keyCacheLen += 1;
-				oldModifiers = modifiers;
+				SI_COCOA_OLD_MODIFIERS = modifiers;
 
 				break;
 			}
@@ -2799,9 +2921,9 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 
 				cstring buf = NSEvent_characters(event);
 				usize len = si_cstrLen(buf);
-				memcpy(out->charBuffer, buf, len);
-				out->charBufferLen = len;
-				out->charBuffer[out->charBufferLen] = '\0';
+				memcpy(&out->charBuffer[out->charBufferLen], buf, len);
+				out->charBufferLen += len;
+
 				break;
 			}
 			case NSEventTypeKeyUp: {
@@ -2834,6 +2956,70 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 					pos.x / win->scaleFactor.x,
 					pos.x / win->scaleFactor.y
 				);
+				break;
+			}
+			case NSEventTypeLeftMouseDown: {
+				out->type.mousePress = true;
+				siapp__mouseButtonPress(out, SI_MOUSE_LEFT);
+				break;
+			}
+			case NSEventTypeLeftMouseUp: {
+				out->type.mouseRelease = true;
+				siapp__mouseButtonRelease(out, SI_MOUSE_LEFT);
+			}
+			case NSEventTypeRightMouseDown: {
+				out->type.mousePress = true;
+				siapp__mouseButtonPress(out, SI_MOUSE_RIGHT);
+				break;
+			}
+			case NSEventTypeRightMouseUp: {
+				out->type.mouseRelease = true;
+				siapp__mouseButtonRelease(out, SI_MOUSE_RIGHT);
+				break;
+			}
+			case NSEventTypeOtherMouseDown: {
+				NSInteger button = NSEvent_buttonNumber(event);
+				siMouseButtonType type;
+				switch (button) {
+					case 2: type = SI_MOUSE_MIDDLE; break;
+					case 3: type = SI_MOUSE_X1; break;
+					case 4: type = SI_MOUSE_X2; break;
+					default: continue;
+				}
+				out->type.mouseMove = true;
+				siapp__mouseButtonPress(out, type);
+				break;
+			}
+			case NSEventTypeOtherMouseUp: {
+				NSInteger button = NSEvent_buttonNumber(event);
+				siMouseButtonType type;
+				switch (button) {
+					case 2: type = SI_MOUSE_MIDDLE; break;
+					case 3: type = SI_MOUSE_X1; break;
+					case 4: type = SI_MOUSE_X2; break;
+					default: continue;
+				}
+				out->type.mouseRelease = true;
+				siapp__mouseButtonRelease(out, type);
+				break;
+			}
+			case NSEventTypeScrollWheel: {
+				CGFloat deltaY = NSEvent_deltaY(event);
+				CGFloat deltaX = NSEvent_deltaX(event);
+				out->type.mouseScroll = true;
+
+				if (deltaY > 0) {
+					out->mouseWheel = SI_MOUSE_WHEEL_UP;
+				}
+				else if (deltaY < 0) {
+					out->mouseWheel = SI_MOUSE_WHEEL_DOWN;
+				}
+				else if (deltaX > 0) {
+					out->mouseWheel = SI_MOUSE_WHEEL_LEFT;
+				}
+				else if (deltaX < 0) {
+					out->mouseWheel = SI_MOUSE_WHEEL_RIGHT;
+				}
 				break;
 			}
 		}
@@ -2915,11 +3101,11 @@ void siapp_windowSwapBuffers(siWindow* win) {
 void siapp_windowClose(siWindow* win) {
 	SI_ASSERT_NOT_NULL(win);
 	siapp_windowRendererDestroy(win);
+	SI_WINDOWS_NUM -= 1;
 
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	ReleaseDC(win->hwnd, win->hdc);
 	DestroyWindow(win->hwnd);
-	SI_WINDOWS_NUM -= 1;
 
 	if (SI_WINDOWS_NUM == 0) {
 		si_dllUnload(SI_WIN32_DWMAPI);
@@ -2928,7 +3114,6 @@ void siapp_windowClose(siWindow* win) {
 	SI_STOPIF(win->__x11BlankCursor, XFreeCursor(win->display, win->__x11BlankCursor));
 	SI_STOPIF(win->hwnd, XDestroyWindow(win->display, win->hwnd));
 	SI_STOPIF(win->display, XCloseDisplay(win->display));
-	SI_WINDOWS_NUM -= 1;
 	win->__x11BlankCursor = 0;
 
 	if (SI_WINDOWS_NUM == 0) {
@@ -2945,6 +3130,15 @@ void siapp_windowClose(siWindow* win) {
 #elif defined(SIAPP_PLATFORM_API_COCOA)
 	NSWindow_close(win->hwnd);
 	NSRelease(win->hwnd);
+
+	for_range (i, 0, countof(win->allocatedClasses)) {
+		NSRelease(win->allocatedClasses[i]);
+	}
+
+	if (SI_WINDOWS_NUM == 0) {
+		si_dllUnload(SI_COCOA_IOKIT);
+		SI_COCOA_IOKIT = nil;
+	}
 #endif
 
 	free(win);
@@ -6088,7 +6282,7 @@ void siapp_drawTextF(siWindow* win, siText text, siVec2 pos, u32 size) {
 	for_range (i, 0, text.len) {
 		i32 realIndex = text.chars[i];
 
-		if (realIndex < 0) { // TODO(EimaMei): Benchmark is a benchless verion is faster.
+		if (realIndex < 0) { // TODO(EimaMei): Benchmark the benchless verion
 			switch (-realIndex) {
 				case ' ': {
 					base.x += text.font->advance.space * scaleFactor;

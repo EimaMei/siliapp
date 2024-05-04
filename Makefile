@@ -4,16 +4,17 @@ NAME = test
 OS = MAC
 
 SRC-DIR = src
-SRC-FILES = $(notdir $(wildcard $(SRC-DIR)/*.m))
+SRC-FILES = $(notdir $(wildcard $(SRC-DIR)/*.c))
 
 DEPS-DIR = $(SRC-DIR)/deps
 DEPS-SRC = $(notdir $(wildcard $(DEPS-DIR)/*.c))
 
 INCLUDE = -objective-c -I"include" -I"." -I"deps"
 FLAGS = -std=c99 -Wall -Wextra -Wpedantic
+MAC_GEN_APP = false
 
 # do not edit this
-SRC-OBJ = $(addprefix $(OUTPUT)/, $(SRC-FILES:.m=.o))
+SRC-OBJ = $(addprefix $(OUTPUT)/, $(SRC-FILES:.c=.o))
 DEPS-OBJ = $(addprefix $(OUTPUT)/, $(DEPS-SRC:.c=.o))
 
 ifeq ($(OS),WINDOWS)
@@ -22,7 +23,7 @@ ifeq ($(OS),WINDOWS)
 
 else ifeq ($(OS),MAC)
 	EXE = $(OUTPUT)/$(NAME)
-	LIBS = -framework Cocoa -framework Foundation -framework AppKit -framework OpenGL -framework CoreVideo
+	LIBS = -framework Cocoa -framework Foundation -framework AppKit -framework OpenGL -framework CoreVideo -framework IOKit
 
 else
 	EXE = $(OUTPUT)/$(NAME)
@@ -34,7 +35,12 @@ all: $(OUTPUT) $(EXE) run
 
 # Run the exe.
 run: $(EXE)
+ifeq ($(MAC_GEN_APP), true)
+	make generateApp
+	open $(OUTPUT)/$(NAME).app
+else
 	./$(EXE)
+endif
 
 # Clean the 'build' folder.
 clean:
@@ -47,7 +53,7 @@ ifeq ($(OS),MAC)
 #make generateApp
 endif
 
-$(OUTPUT)/%.o: $(SRC-DIR)/%.m
+$(OUTPUT)/%.o: $(SRC-DIR)/%.c
 	$(CC) $(FLAGS) $(INCLUDE) -c $^ -o $(OUTPUT)/$(notdir $@)
 
 $(OUTPUT)/%.o: deps/%.h

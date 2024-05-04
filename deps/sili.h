@@ -2645,6 +2645,12 @@ isize si_sprintf(char* buffer, cstring fmt, ...);
 /* Writes a NULL-terminated formatted C-string into the 'buffer' with a specified
  * buffer capacity. Returns the amount of written bytes. */
 isize si_snprintf(char* buffer, usize outCapacity, cstring fmt, ...);
+/* Writes a NULL-terminated formatted C-string into the allocator. Returns the
+ * amount of written bytes. */
+isize si_sprintfAlloc(siAllocator* allocator, char** out, cstring fmt, ...);
+/* Writes a NULL-terminated formatted C-string from specified va_list into the
+ * allocator. Returns the amount of written bytes. */
+isize si_sprintfAllocVa(siAllocator* allocator, char** out, cstring fmt, va_list va);
 /* Writes a NULL-terminated formatted C-string from specified va_list into the
  * 'buffer'. Returns the amount of written bytes. */
 isize si_sprintfVa(char* buffer, cstring fmt, va_list va);
@@ -6291,7 +6297,6 @@ isize si_fprintf(siFile* file, cstring fmt, ...) {
 
 	return res;
 }
-F_TRAITS(inline)
 isize si_fprintfVa(siFile* file, cstring fmt, va_list va) {
 	char buffer[SI_KILO(4)];
 	isize count = si_snprintfVa(buffer, sizeof(buffer), fmt, va) - 1;
@@ -6299,7 +6304,6 @@ isize si_fprintfVa(siFile* file, cstring fmt, va_list va) {
 	return count;
 }
 
-F_TRAITS(inline)
 isize si_sprintf(char* buffer, cstring fmt, ...) {
 	va_list va;
 	va_start(va, fmt);
@@ -6308,7 +6312,6 @@ isize si_sprintf(char* buffer, cstring fmt, ...) {
 
 	return res;
 }
-F_TRAITS(inline)
 isize si_snprintf(char* buffer, usize outCapacity, cstring fmt, ...) {
 	va_list va;
 	va_start(va, fmt);
@@ -6317,7 +6320,25 @@ isize si_snprintf(char* buffer, usize outCapacity, cstring fmt, ...) {
 
 	return res;
 }
-F_TRAITS(inline)
+
+isize si_sprintfAlloc(siAllocator* allocator, char** out, cstring fmt, ...) {
+	va_list va;
+	va_start(va, fmt);
+	isize res = si_sprintfAllocVa(allocator, out, fmt, va);
+	va_end(va);
+
+	return res;
+}
+isize si_sprintfAllocVa(siAllocator* allocator, char** out, cstring fmt, va_list va) {
+	char* ptr = (char*)si_allocatorCurPtr(allocator);
+	isize len = si_snprintf(
+		ptr, si_allocatorAvailable(allocator), fmt, va
+	);
+	*out = ptr;
+	allocator->offset += len;
+
+	return len;
+}
 isize si_sprintfVa(char* buffer, cstring fmt, va_list va) {
 	return si_snprintfVa(buffer, USIZE_MAX, fmt, va);
 }
