@@ -1845,7 +1845,7 @@ u64 si_cstrToU64Ex(cstring str, usize len, u32 base);
 i64 si_cstrToI64(cstring str);
 /* Returns an signed 64-bit integer form of the C-string with specified length.
  * The string _must_ be a number. */
-u64 si_cstrToI64Ex(cstring str, usize len, u32 base);
+i64 si_cstrToI64Ex(cstring str, usize len, u32 base);
 /* TODO(EimaMei): f64 si_cstr_to_f64(cstring str); */
 
 /* Creates a string from the given unsigned number. By default the function assumes
@@ -2648,14 +2648,14 @@ isize si_snprintf(char* buffer, usize outCapacity, cstring fmt, ...);
 /* Writes a NULL-terminated formatted C-string into the allocator. Returns the
  * amount of written bytes. */
 isize si_sprintfAlloc(siAllocator* allocator, char** out, cstring fmt, ...);
-/* Writes a NULL-terminated formatted C-string from specified va_list into the
+/* Writes a NULL-terminated formatted C-string from specified va_list into an
  * allocator. Returns the amount of written bytes. */
 isize si_sprintfAllocVa(siAllocator* allocator, char** out, cstring fmt, va_list va);
 /* Writes a NULL-terminated formatted C-string from specified va_list into the
  * 'buffer'. Returns the amount of written bytes. */
 isize si_sprintfVa(char* buffer, cstring fmt, va_list va);
-/* Writes a NULL-terminated formatted C-string from specified va_list into the
- * 'buffer' with a specified capacity. Returns the amount of written bytes. */
+/* Writes a NULL-terminated formatted C-string from specified va_list into a
+ * buffer with a specified capacity. Returns the amount of written bytes. */
 isize si_snprintfVa(char* buffer, usize outCapacity, cstring fmt, va_list va);
 
 #endif /* !defined(SI_NO_PRINT) */
@@ -4199,6 +4199,8 @@ void si_stringFree(siString str) {
 	si_free(SI_STRING_HEADER(str)->allocator, SI_STRING_HEADER(str));
 }
 void si_stringMakeSpaceFor(siString* str, usize add_len) {
+	SI_ASSERT_NOT_NULL(str);
+
 	siStringHeader* header = SI_STRING_HEADER(*str);
 	usize oldSize = sizeof(siStringHeader) + header->len + 1;
 	usize newSize = oldSize + add_len;
@@ -4227,10 +4229,12 @@ void si_stringShrinkToFit(siString* str) {
 	header->capacity = header->len;
 }
 
-inline char* si_cstrMake(siAllocator* alloc, cstring cstr) {
+char* si_cstrMake(siAllocator* alloc, cstring cstr) {
 	return si_cstrMakeLen(alloc, cstr, si_cstrLen(cstr));
 }
-inline char* si_cstrMakeLen(siAllocator* alloc, cstring cstr, usize len) {
+char* si_cstrMakeLen(siAllocator* alloc, cstring cstr, usize len) {
+	SI_ASSERT_NOT_NULL(alloc);
+
 	char* str = si_mallocArray(alloc, char, len + 1);
 	memcpy(str, cstr, len);
 	str[len] = '\0';
@@ -4239,16 +4243,14 @@ inline char* si_cstrMakeLen(siAllocator* alloc, cstring cstr, usize len) {
 }
 char* si_cstrMakeFmt(siAllocator* alloc, cstring cstr, ...) {
 	SI_ASSERT_NOT_NULL(cstr);
-	char buffer[SI_KILO(4)];
+	char* out;
 
 	va_list va;
 	va_start(va, cstr);
-	usize len = si_snprintfVa(buffer, sizeof(buffer), cstr, va);
+	(void)si_sprintfAllocVa(alloc, &out, cstr, va);
 	va_end(va);
 
-	char* res = si_mallocArray(alloc, char, len + 1);
-	res[len] = '\0';
-	return memcpy(res, buffer, len);
+	return out;
 }
 
 F_TRAITS(inline)
@@ -4402,6 +4404,11 @@ char* si_f64ToCstrEx(siAllocator* alloc, f64 num, i32 base, u32 afterPoint,
 
 	b32 isNegative;
 	{
+		/* NOTE(EimaMei): For a quick 'n dirty way of checking if the specified
+		 * float are special numbers (for this Nan and infinity), we just union
+		 * cast f64 value into an u64 integer and for a regular comparison. Note
+		 * that later in the code the sign bit gets always set to zero, meaning
+		 * we only need to do 2 checks instead of 4 for each signed version. */
 		static u64 infinity = 0x7FF0000000000000;
 		static u64 nanV = 0x7FF8000000000000;
 
@@ -4486,7 +4493,7 @@ char* si_f64ToCstrEx(siAllocator* alloc, f64 num, i32 base, u32 afterPoint,
 i64 si_cstrToI64(cstring str) {
 	return si_cstrToI64Ex(str, USIZE_MAX, 10);
 }
-u64 si_cstrToI64Ex(cstring str, usize len, u32 base) {
+i64 si_cstrToI64Ex(cstring str, usize len, u32 base) {
 	SI_ASSERT_NOT_NULL(str);
 
 	i32 modifier = 1;
@@ -6331,13 +6338,14 @@ isize si_sprintfAlloc(siAllocator* allocator, char** out, cstring fmt, ...) {
 }
 isize si_sprintfAllocVa(siAllocator* allocator, char** out, cstring fmt, va_list va) {
 	char* ptr = (char*)si_allocatorCurPtr(allocator);
-	isize len = si_snprintf(
+
+	isize res = si_snprintfVa(
 		ptr, si_allocatorAvailable(allocator), fmt, va
 	);
-	*out = ptr;
-	allocator->offset += len;
 
-	return len;
+	*out = ptr;
+	allocator->offset += res;
+	return res;
 }
 isize si_sprintfVa(char* buffer, cstring fmt, va_list va) {
 	return si_snprintfVa(buffer, USIZE_MAX, fmt, va);

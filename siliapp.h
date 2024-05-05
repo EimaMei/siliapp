@@ -150,6 +150,8 @@ typedef SI_ENUM(b32, siWindowArg) {
 
 #if defined(SIAPP_PLATFORM_API_WIN32)
 	SI_WINDOW_WIN32_DISABLE_DARK_MODE = SI_BIT(30),
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	SI_WINDOW_COCOA_DISABLE_AUTOMATIC_MENUBAR = SI_BIT(30),
 #endif
 
 	SI_WINDOW_DEFAULT                 = SI_WINDOW_CENTER | SI_WINDOW_KEEP_ASPECT_RATIO,
@@ -1782,6 +1784,7 @@ IOServiceClosePROC si_IOServiceClose;
 b32 si__osxWindowClose(void* self) {
 	siWindow* win = nil;
 	object_getInstanceVariable(self, "siWindow", (void*)&win);
+	SI_STOPIF(win == nil, return true);
 
 	win->e.type.isClosed = true;
 	return true;
@@ -1811,15 +1814,16 @@ void si__osxWindowFocus(void* self) {
 	object_getInstanceVariable(self, "siWindow", (void*)&win);
 	SI_ASSERT_NOT_NULL(win);
 
-
-	//NSApplication_activateIgnoringOtherApps(NSApp, true);
+	win->e.type.windowFocusChange = true;
+	win->e.focus = true;
 }
 void si__osxWindowFocusLost(void* self) {
 	siWindow* win = nil;
 	object_getInstanceVariable(self, "siWindow", (void*)&win);
 	SI_ASSERT_NOT_NULL(win);
 
-	//SI_PANIC();
+	win->e.type.windowFocusChange = true;
+	win->e.focus = false;
 }
 b32 si__osxViewResponder(void) {
 	return true;
@@ -2253,9 +2257,10 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 		storeType |= NSWindowStyleMaskResizable;
 	}
 
+	win->hwnd = NSAlloc(NSClass(NSWindow));
 	win->hwnd = NSWindow_init(
-		NSMakeRect(pos.x, screenH - pos.y, size.width, size.height), storeType,
-		NSBackingStoreBuffered, false
+		win->hwnd, NSMakeRect(pos.x, screenH - pos.y, size.width, size.height),
+		storeType, NSBackingStoreBuffered, false
 	);
 	NSWindow_setTitle(win->hwnd, name);
 
@@ -2277,6 +2282,8 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 	si_class_def(delegateClass, "windowWillUseStandardFrame:defaultFrame:", si__osxTest, "{NSRect=ffff}@:@{NSRect=ffff}");
 	si_class_def(delegateClass, "windowWillMove:", si__osxWindowMove, "v@:@");
 	si_class_def(delegateClass, "windowDidMove:", si__osxWindowMove, "v@:@");
+	si_class_def(delegateClass, "windowDidBecomeKey:", si__osxWindowFocus, "v@:@");
+	si_class_def(delegateClass, "windowDidResignKey:", si__osxWindowFocusLost, "v@:@");
 
 	si_class_def(delegateClass, "draggingEntered:", si__osxDraggingEntered, "l@:@");
 	si_class_def(delegateClass, "draggingUpdated:", si__osxDraggingUpdated, "l@:@");
@@ -2300,7 +2307,6 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 	NSView* view = NSWindow_contentView(win->hwnd);
 	NSView_setLayerContentsPlacement(view, NSViewLayerContentsPlacementTopLeft);
 	NSView_addSubview(view, subview);
-	objc_msgSend_void_id(win->hwnd, sel_registerName("makeFirstResponder:"), view);
 
 	win->allocatedClasses[0] = delegate;
 	win->allocatedClasses[1] = subview;
@@ -2335,27 +2341,24 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 		key->pressed = caps;
 		SI_COCOA_OLD_MODIFIERS = NSEventModifierFlagCapsLock * caps;
 	}
-	{
-		siAllocator* stack = si_allocatorMake(SI_KILO(1));
-		SILICON_ALLOCATOR = si_salloc(64);
+	if (!(arg & SI_WINDOW_COCOA_DISABLE_AUTOMATIC_MENUBAR)) {
+		SILICON_ALLOCATOR = si_salloc(256);
 		sicString name = NSProcessInfo_processName(NSProcessInfo_processInfo());
 		SILICON_ALLOCATOR = nil;
+		siAllocator* stack = si_allocatorMake(SI_KILO(1));
 
 		NSMenu* menu = NSAlloc(objc_getClass("NSMenu"));
 		NSApplication_setMainMenu(NSApp, menu);
 
-		char* about, *hide, *quit;
-		si_sprintfAlloc(stack, &about, "About %u", 50);
-
 		NSMenuItem* processItems[] = {
-			NSMenuItem_init(about, selector(orderFrontStandardAboutPanel), ""),
-			NSMenuItem_separatorItem(), // Adds a separator dash between the menu items.
-			NSMenuItem_init("Services", nil, ""), // Define this for later.
-			NSMenuItem_init(hide, selector(hide), "h"), // The same 'orderFrontStandardAboutPanel' behaviour happens for everything below (apart from the separator).
+			NSMenuItem_init(si_cstrMakeFmt(stack, "About %s", name), selector(orderFrontStandardAboutPanel), ""),
+			NSMenuItem_separatorItem(),
+			NSMenuItem_init("Services", nil, ""),
+			NSMenuItem_init(si_cstrMakeFmt(stack, "Hide %s", name), selector(hide), "h"),
 			NSMenuItem_init("Hide Other", selector(hideOtherApplications), "h"),
 			NSMenuItem_init("Show All", selector(unhideAllApplications), ""),
 			NSMenuItem_separatorItem(),
-			NSMenuItem_init(quit, selector(terminate), "q")
+			NSMenuItem_init(si_cstrMakeFmt(stack, "Quit %s", name), selector(terminate), "q")
 		};
 
 		NSMenuItem* menuItem = NSAlloc(objc_getClass("NSMenuItem"));
@@ -2366,7 +2369,6 @@ siWindow* siapp_windowMakeEx(cstring name, siPoint pos, siArea size, siWindowArg
 		for_range (i, 0, countof(processItems)) {
 			NSMenu_addItem(processMenu, processItems[i]);
 		}
-
 
 		NSRelease(processMenu);
 		NSRelease(menuItem);
@@ -2401,9 +2403,6 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 	SI_ASSERT_MSG(
 		win->renderType != SI_RENDERING_UNSET, "You must call the 'siapp_windowRendererMake' function at least once."
 	);
-
-	b32 n = NSWindow_isKeyWindow(win->hwnd);
-	si_printf("%i\n", n);
 
 	siWindowEvent* out = &win->e;
 	win->cursorSet = false;
@@ -2841,27 +2840,32 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 	}
 	#undef SI_CHECK_WIN
 #else
+	NSEvent* event;
 	if (await) {
-		NSEvent* event = NSApplication_nextEventMatchingMask(
+		/* NOTE(EimaMei): Specifying 'NSDate_distantFuture()' makes the function
+		 * wait for the upcoming event. */
+		event = NSApplication_nextEventMatchingMask(
 			NSApp, NSEventMaskAny,
 			NSDate_distantFuture(),
 			NSDefaultRunLoopMode, true
 		);
-		NSApplication_sendEvent(NSApp, event);
+		goto eventLoop; /* NOTE(EimaMei): The newly found event might be our window's,
+						   so we have to process through it in the event loop. */
 	}
 
 	siArea screen = siapp_screenSizeGet();
 	while (true) {
-		NSEvent* event = NSApplication_nextEventMatchingMask(
+		event = NSApplication_nextEventMatchingMask(
 			NSApp, NSEventMaskAny, nil,
 			NSDefaultRunLoopMode, true
 		);
 
+eventLoop:
 		if (event == nil) {
 			break;
 		}
 		else if (NSEvent_window(event) != win->hwnd) {
-			NSApplication_postEvent(NSApp, event, false);
+			NSApplication_sendEvent(NSApp, event);
 			break;
 		}
 
@@ -2947,15 +2951,17 @@ const siWindowEvent* siapp_windowUpdate(siWindow* win, b32 await) {
 			case NSEventTypeRightMouseDragged:
 			case NSEventTypeMouseMoved: {
 				NSPoint pos = NSEvent_locationInWindow(event);
-				pos.y = screen.height - pos.y;
+				f32 screenYPos = screen.height - pos.y;
+				pos.y =  out->windowSize.height - pos.y;
 
 				out->type.mouseMove = true;
-				out->mouseRoot = SI_POINT(out->windowPos.x + pos.x, pos.y - out->windowPos.y);
+				out->mouseRoot = SI_POINT(out->windowPos.x + pos.x, screenYPos + out->windowPos.y);
 				out->mouse = SI_POINT(pos.x, pos.y);
 				out->mouseScaled = SI_VEC2(
 					pos.x / win->scaleFactor.x,
 					pos.x / win->scaleFactor.y
 				);
+				out->mouseInside = (out->mouse.x >= 0 && out->mouse.y >= 0 && out->mouse.x <= out->windowSize.width && out->mouse.y <= out->windowSize.height);
 				break;
 			}
 			case NSEventTypeLeftMouseDown: {
@@ -3233,15 +3239,15 @@ void siapp_windowShow(siWindow* win, siWindowShowState state) {
 #elif defined(SIAPP_PLATFORM_API_COCOA)
 	switch (state) {
 		case SI_SHOW_HIDE: {
-			NSWindow_orderOut(win->hwnd, nil);
+			NSWindow_orderOut(win->hwnd, win->hwnd);
 			break;
 		}
 		case SI_SHOW_ACTIVATE: {
-			NSWindow_orderFront(win->hwnd, nil);
+			NSWindow_orderFront(win->hwnd, win->hwnd);
 			break;
 		}
 		case SI_SHOW_MINIMIZE: {
-			NSWindow_performMiniaturize(win->hwnd, nil);
+			NSWindow_performMiniaturize(win->hwnd, win->hwnd);
 			break;
 		}
 		case SI_SHOW_MAXIMIZE: {
@@ -3251,7 +3257,7 @@ void siapp_windowShow(siWindow* win, siWindowShowState state) {
 			break;
 		}
 		case SI_SHOW_RESTORE: {
-			NSWindow_deminiaturize(win->hwnd, nil);
+			NSWindow_deminiaturize(win->hwnd, win->hwnd);
 			break;
 		}
 	}
@@ -3299,7 +3305,10 @@ void siapp_windowFullscreen(siWindow* win, b32 fullscreen) {
 	);
 	XFlush(win->display);
 #elif defined(SIAPP_PLATFORM_API_COCOA)
-	objc_msgSend_void_id(win->hwnd, sel_registerName("toggleFullScreen:"), nil);
+	if (win->rectBeforeFullscreen.x != (i32)fullscreen) {
+		NSWindow_toggleFullScreen(win->hwnd, win->hwnd);
+		win->rectBeforeFullscreen.x = fullscreen;
+	}
 #endif
 }
 
@@ -5792,6 +5801,8 @@ void siapp_windowTitleSetEx(const siWindow* win, cstring title, usize len) {
 		win->display, win->hwnd, _NET_WM_NAME, UTF8_STRING,
 		8, PropModeReplace, (siByte*)title, len
 	);
+#elif defined(SIAPP_PLATFORM_API_COCOA)
+	NSWindow_setTitle(win->hwnd, title);
 #endif
 }
 
@@ -6707,7 +6718,6 @@ b32 siapp_windowOpenGLInit(siWindow* win, u32 maxDrawCount, u32 maxTexCount,
 	XFree(fbList);
 	XFree(vi);
 #elif defined(SIAPP_PLATFORM_API_COCOA)
-	#warning "Fix this"
 	NSOpenGLPixelFormatAttribute attribs[] = {
 		NSOpenGLPFANoRecovery,
 		NSOpenGLPFAAccelerated,
@@ -7326,6 +7336,12 @@ siMessageBoxResult siapp_messageBoxEx(siWindow* win, cstring title,
 			response = (response == NSAlertFirstButtonReturn) ? SI_MESSAGE_BOX_RESULT_HELP : 0;
 			break;
 		}
+	}
+
+	if (win != nil && win->e.type.keyPress) {
+		memset(win->e.keys, 0, sizeof(win->e.keys));
+		win->e.curKey = 0;
+		win->e.type.keyPress = false;
 	}
 
 	return response;

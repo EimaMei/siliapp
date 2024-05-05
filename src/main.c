@@ -215,7 +215,7 @@ int main(void) {
 				SI_MESSAGE_BOX_OK, SI_MESSAGE_BOX_ICON_INFO
 			);
 
-			while (true) {
+			while (siapp_windowIsRunning(win)) {
 				e = siapp_windowUpdate(win, true);
 				SI_STOPIF(e->type.keyPress && e->curKey == SK_ENTER, break);
 
@@ -224,6 +224,7 @@ int main(void) {
 					len += e->charBufferLen;
 				}
 			}
+
 			siapp_windowTitleSetEx(win, title, len);
 			continue;
 		}
@@ -281,7 +282,6 @@ int main(void) {
 		secondWindowLoop(win2);
 #endif
 	}
-		si_printf("test\n");
     siapp_cursorFree(customCursor);
 	//siapp_fontFree(f);
 

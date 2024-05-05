@@ -9,7 +9,7 @@ SRC-FILES = $(notdir $(wildcard $(SRC-DIR)/*.c))
 DEPS-DIR = $(SRC-DIR)/deps
 DEPS-SRC = $(notdir $(wildcard $(DEPS-DIR)/*.c))
 
-INCLUDE = -objective-c -I"include" -I"." -I"deps"
+INCLUDE = -I"include" -I"." -I"deps"
 FLAGS = -std=c99 -Wall -Wextra -Wpedantic
 MAC_GEN_APP = false
 
