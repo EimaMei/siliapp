@@ -1,15 +1,12 @@
-#define SIAPP_IMPLEMENTATION
 #include <siliapp.h>
 
 
 int main(void) {
-	siAllocator* alloc = si_allocatorMake(SI_KILO(8));
-
 	siWindow* win = siapp_windowMake(
-		alloc, "Siliapp events",
-		SI_AREA(0, 0),  SI_WINDOW_CENTER | SI_WINDOW_OPTIMAL_SIZE | SI_WINDOW_SCALING,
-		0, 0, SI_AREA(0, 0)
+		"Siliapp events",
+		SI_AREA(0, 0),  SI_WINDOW_CENTER | SI_WINDOW_OPTIMAL_SIZE
 	);
+	siapp_windowRendererMake(win, SI_RENDERING_CPU, 0, SI_AREA(0, 0), 0);
 	siapp_windowBackgroundSet(win, SI_RGB(0, 0, 0));
 
 	const siWindowEvent* e = siapp_windowEventGet(win);
@@ -91,12 +88,11 @@ int main(void) {
 					);
 					break;
 				}
+				/* SI_EVENT_MOUSE_CHANGE */
 			}
 		}
     }
 
 	siapp_windowClose(win);
-	si_allocatorFree(alloc);
 	return 0;
 }
-

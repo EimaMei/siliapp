@@ -1,3 +1,4 @@
+#define SIAPP_X11_RESIZE_BORDER 4
 #include <siliapp.h>
 #define DISABLE_SECOND_WINDOW  1 /* NOTE(EimaMei): For whatever reason, creating a
 								   window on a subthread is not allowed  on MacOS,
@@ -16,14 +17,12 @@ b32 stopRenderingWin2 = false;
 #define CURSOR_W 16
 #define CURSOR_H 32
 
-
+// add resize support for win32 borderless windows
+// add the option to move borderless windows
 // fix viewport for opengl
-// Fix the issue with trying to close both windows for GL
-// improve instancding for laptop, especially trying to draw more text
+// improve instancing for laptop, especially trying to draw more text
 // add a way to check how much memory you can take
 // transformed cursor returns back to normal when it returns to the og window
-// NSString_to_char memory leaks???
-// replace release with dealloc??
 
 
 int main(void) {
@@ -123,8 +122,13 @@ int main(void) {
 	}
 #endif
 
+	siFont f = siapp_fontLoad(win, "res/calibri.ttf", 128);
+
+	siAllocator* textAlloc = si_allocatorMake(SI_KILO(1));
+	siText txt = siapp_textLoad(textAlloc, &f, "Kęstučio ąsotis");
+
 	while (siapp_windowIsRunning(win) && !siapp_windowKeyClicked(win, SK_ESC)) {
-		const siWindowEvent* e = siapp_windowUpdate(win, false);
+		const siWindowEvent* e = siapp_windowUpdate(win, true);
 
 		if (0) {
 		siKeyState s0 = siapp_windowKeyGet(win, SK_SYSTEM_L);
@@ -169,11 +173,8 @@ int main(void) {
 				SI_STOPIF(state > SI_SHOW_RESTORE, state = 0);
 				break;
 			}
-#if !defined(SIAPP_PLATFORM_API_COCOA)
-			case SK_F11: {
-#else
+			case SK_F11:
 			case SK_F: {
-#endif
 				static b32 fullscreen = true;
 				siapp_windowFullscreen(win, fullscreen);
 				fullscreen ^= true;
@@ -203,6 +204,13 @@ int main(void) {
 				static b32 borderless = true;
 				siapp_windowBorderlessSet(win, borderless);
 				borderless ^= true;
+				break;
+			}
+			case SK_R: {
+				siResizeOperation op = siapp_windowResizeOperationFind(win);
+				if (op != 0) {
+					siapp_windowResizeOperationLaunch(win, op);
+				}
 				break;
 			}
 		}
@@ -273,15 +281,20 @@ int main(void) {
 			SI_RGB(0, 0, 255)
 		);
 
+
 		//siapp_drawText(win, woah, SI_POINT(300, 0), 64);
+		siapp_drawText(win, txt, SI_POINT(0, 0), 128);
 
 		siapp_windowRender(win);
 		siapp_windowSwapBuffers(win);
+
 
 #if DISABLE_SECOND_WINDOW != 1 && defined(SIAPP_PLATFORM_API_COCOA)
 		secondWindowLoop(win2);
 #endif
 	}
+	si_allocatorFree(textAlloc);
+	siapp_fontFree(f);
     siapp_cursorFree(customCursor);
 	//siapp_fontFree(f);
 
